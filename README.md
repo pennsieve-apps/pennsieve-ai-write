@@ -16,30 +16,38 @@ For the chosen hypothesis (set via `VP_WRITE_HYPOTHESIS_ID`, default `H1`):
 
 1. Locate the executed notebook the analyze stage produced (`<analysis_workdir>/analysis.ipynb`).
 2. **Paper Writer** (Opus): generate `paper.md` grounded in the notebook cells, the hypothesis context, the literature claims, and a citation-authoritative bibliography pulled from CrossRef/DataCite.
-3. **Paper Auditor** (Sonnet): fact-check every numerical claim, citation, methodology statement, and dataset claim against the source artifacts. Produces `audit.json` with per-claim `supported | partial | unsupported | unverifiable` verdicts.
-4. **Paper Revisor** (Sonnet): if the audit found any unsupported claims, revise `paper.md` to address them. One revise pass max for v0.
-5. Write the updated blackboard, manuscript markdown, and audit JSON to `OUTPUT_DIR/`.
+3. **Audit ⇄ Revise loop**, up to `VP_WRITE_MAX_AUDIT_ITERS` iterations (default 3):
+   - **Paper Auditor** (Sonnet): fact-check every numerical claim, citation, methodology statement, and dataset claim against the source artifacts. Produces per-iteration `audit.iter{N}.json` (and `audit.json` always tracking the latest) with per-claim `supported | partial | unsupported | unverifiable` verdicts.
+   - Exit if the audit reports 0 unsupported claims, or max iters reached, or `VP_WRITE_REVISE=0`.
+   - Otherwise **Paper Revisor** (Sonnet) runs with an auto-generated note targeting the unsupported claims, producing a new `paper.md`. The pre-revise text is snapshotted to `paper.iter{N}.md` so each audit JSON can be paired against the exact text it reviewed.
+4. Write the updated blackboard, manuscript markdown, audit JSON, and PDFs to `OUTPUT_DIR/`.
 
 Outputs:
 
 ```
 OUTPUT_DIR/
-├── blackboard.json                          # updated with manuscript metadata
+├── blackboard.json                # updated with manuscript metadata
 ├── papers/<HYPOTHESIS_ID>/
-│   ├── paper.md                             # the manuscript (latest, post-revise if applicable)
-│   ├── paper.pdf                            # rendered version of the same
-│   ├── paper_audited.pdf                    # pre-revise text with auditor highlights inline
-│   ├── paper_audited.md                     # the audited-paper markdown (with <mark> spans)
-│   ├── audit.json                           # auditor verdicts
-│   ├── paper.preRevision.<timestamp>.md     # only if the revisor ran
-│   └── figures/                             # PNGs extracted from the executed notebook
-├── notebook.jsonl                           # blackboard event log
-└── usage.jsonl                              # per-LLM-call cost log
+│   ├── paper.md                   # final manuscript (post all revise iterations)
+│   ├── paper.pdf                  # rendered version of the same
+│   ├── paper_audited.pdf          # final text with FINAL audit's highlights
+│   ├── paper_audited.md           # the audited-paper markdown (<mark> spans embedded)
+│   ├── audit.json                 # final iteration's auditor verdicts (canonical)
+│   ├── audit.iter1.json           # iter-1 audit (against writer output)
+│   ├── audit.iter2.json           # iter-2 audit (against iter-1 revise output) — if loop ran
+│   ├── audit.iter3.json           # iter-3 audit — if loop ran
+│   ├── paper.iter1.md             # pre-revise snapshot — matches audit.iter1.json's text
+│   ├── paper.iter2.md             # pre-revise snapshot — matches audit.iter2.json's text
+│   └── figures/                   # PNGs extracted from the executed notebook
+├── notebook.jsonl                 # blackboard event log
+└── usage.jsonl                    # per-LLM-call cost log
 ```
 
 The two PDFs serve different purposes:
 - **`paper.pdf`** — clean rendering of the final manuscript. What you'd hand to a colleague.
-- **`paper_audited.pdf`** — the **pre-revise** text with `<mark>`-wrapped highlights showing what the auditor flagged (yellow = partial, red = unsupported, orange = unverifiable). Useful for understanding what was concerning before the revisor went to work, even after the revisor has produced the cleaned-up text.
+- **`paper_audited.pdf`** — the **final** text with `<mark>`-wrapped highlights showing what the **final** audit flagged (yellow = partial, red = unsupported, orange = unverifiable). After the loop converges, this shows what's still concerning in the manuscript that ships — useful for downstream human review.
+
+Each `audit.iter{N}.json` is paired with `paper.iter{N}.md` (the text that iteration audited). A reviewer can trace the convergence: read the iter-1 audit against iter-1 markdown, then see what iter-2 markdown changed in response, and so on.
 
 PDF rendering is best-effort: if WeasyPrint's system libraries aren't available at runtime, `paper.md` and `audit.json` are still produced and the rendering failure is logged but doesn't fail the workflow.
 
@@ -50,7 +58,8 @@ The platform injects all the standard processor env vars (`INPUT_DIR`, `OUTPUT_D
 | Var | Default | Purpose |
 |-----|---------|---------|
 | `VP_WRITE_HYPOTHESIS_ID` | `H1` | Which hypothesis on the blackboard to write a manuscript for. |
-| `VP_WRITE_REVISE` | `1` | If `0`, skip the revisor pass (audit-only). |
+| `VP_WRITE_REVISE` | `1` | If `0`, run a single audit pass and skip the revisor entirely. |
+| `VP_WRITE_MAX_AUDIT_ITERS` | `3` | Hard cap on audit ⇄ revise iterations. Loop also exits early on 0 unsupported claims. Worst-case cost = N × (one auditor call + one revisor call) ≈ $1-1.50 per iteration at Sonnet rates. |
 
 ## Compliance notes
 

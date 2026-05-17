@@ -111,38 +111,65 @@ def run_write(
     )
     _render_pdf_log(bb, md_path, paper_dir / "paper.pdf")
 
-    # 2. Audit
-    print("\n--- paper_auditor ---")
-    audit_result = paper_auditor.audit(
-        bb, client,
-        hypothesis=h,
-        paper_md_path=md_path,
-        executed_nb_path=nb_path,
-        figures_dir=figures_dir,
-    )
-    (paper_dir / "audit.json").write_text(json.dumps(audit_result, indent=2))
-
-    claims = audit_result.get("claims") or []
-    counts = {
-        "supported":   sum(1 for c in claims if c.get("verdict") == "supported"),
-        "partial":     sum(1 for c in claims if c.get("verdict") == "partial"),
-        "unsupported": sum(1 for c in claims if c.get("verdict") == "unsupported"),
-        "unverifiable": sum(1 for c in claims if c.get("verdict") == "unverifiable"),
+    # 2. Audit ⇄ Revise loop. Up to VP_WRITE_MAX_AUDIT_ITERS rounds (default 3).
+    # Each round runs the auditor against the current paper.md; if unsupported
+    # claims remain, run the revisor with an auto-generated note targeting
+    # only those claims and re-loop. Exit when:
+    #   - audit reports 0 unsupported, or
+    #   - max iters reached, or
+    #   - VP_WRITE_REVISE=0 (audit-only mode), or
+    #   - the revisor returns empty paper_md (defensive — caller bailed).
+    #
+    # Each iteration's audit is persisted to audit.iter{N}.json; audit.json
+    # always tracks the latest. Each pre-revise markdown snapshot is written
+    # to paper.iter{N}.md so a reviewer can match audit.iter{N}.json against
+    # the exact text the auditor reviewed.
+    max_iters = int(os.environ.get("VP_WRITE_MAX_AUDIT_ITERS", "3"))
+    audit_result: dict = {}
+    counts: dict = {
+        "supported": 0, "partial": 0, "unsupported": 0, "unverifiable": 0,
     }
-    print(f"  audit: {len(claims)} claims "
-          f"({counts['supported']} sup / {counts['partial']} par / "
-          f"{counts['unsupported']} uns / {counts['unverifiable']} unv)")
 
-    # Render the audited PDF off the PRE-REVISE markdown — highlights are
-    # only meaningful against the text the auditor actually read.
-    _render_audited_pdf_log(bb, md_path, audit_result,
-                            paper_dir / "paper_audited.pdf")
+    for iter_n in range(1, max_iters + 1):
+        print(f"\n--- paper_auditor (iter {iter_n}/{max_iters}) ---")
+        audit_result = paper_auditor.audit(
+            bb, client,
+            hypothesis=h,
+            paper_md_path=md_path,
+            executed_nb_path=nb_path,
+            figures_dir=figures_dir,
+        )
+        (paper_dir / f"audit.iter{iter_n}.json").write_text(
+            json.dumps(audit_result, indent=2))
+        (paper_dir / "audit.json").write_text(
+            json.dumps(audit_result, indent=2))
 
-    iterations = 1
+        claims = audit_result.get("claims") or []
+        counts = {
+            "supported":   sum(1 for c in claims if c.get("verdict") == "supported"),
+            "partial":     sum(1 for c in claims if c.get("verdict") == "partial"),
+            "unsupported": sum(1 for c in claims if c.get("verdict") == "unsupported"),
+            "unverifiable": sum(1 for c in claims if c.get("verdict") == "unverifiable"),
+        }
+        print(f"  audit: {len(claims)} claims "
+              f"({counts['supported']} sup / {counts['partial']} par / "
+              f"{counts['unsupported']} uns / {counts['unverifiable']} unv)")
+        bb.log("paper_auditor", "iter",
+               f"iter{iter_n}: sup={counts['supported']} par={counts['partial']} "
+               f"uns={counts['unsupported']} unv={counts['unverifiable']}")
 
-    # 3. Revise (optional)
-    if revise and counts["unsupported"] > 0:
-        print(f"\n--- paper_revisor ({counts['unsupported']} unsupported claims) ---")
+        if counts["unsupported"] == 0:
+            print(f"  → 0 unsupported claims; exiting audit loop")
+            break
+        if not revise:
+            print(f"  → VP_WRITE_REVISE=0; staying audit-only")
+            break
+        if iter_n >= max_iters:
+            print(f"  → max iters reached ({max_iters}); accepting current state")
+            break
+
+        # Revise: build a targeted note from the unsupported claims.
+        print(f"\n--- paper_revisor (iter {iter_n}, {counts['unsupported']} unsupported) ---")
         unsupported = [c for c in claims if c.get("verdict") == "unsupported"]
         note_lines = [
             "The auditor flagged the following unsupported claims. Revise these "
@@ -164,23 +191,27 @@ def run_write(
             user_note=note,
         )
         new_md = result.get("paper_md", "")
-        if new_md.strip():
-            # Back up the pre-revision version for inspection
-            ts = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
-            (paper_dir / f"paper.preRevision.{ts}.md").write_text(md_path.read_text())
-            md_path.write_text(new_md)
-            iterations = 2
-            bb.log("paper_revisor", "applied", (result.get("revision_summary") or "")[:400])
-            # Re-render paper.pdf to reflect the revised text. The audited
-            # PDF stays as the pre-revise version (highlights point at the
-            # text the auditor actually saw).
-            _render_pdf_log(bb, md_path, paper_dir / "paper.pdf")
-        else:
-            bb.log("paper_revisor", "skipped", "revisor returned empty paper_md")
-    elif revise:
-        print(f"\n--- paper_revisor skipped (0 unsupported claims) ---")
-    else:
-        print(f"\n--- paper_revisor skipped (VP_WRITE_REVISE=0) ---")
+        if not new_md.strip():
+            bb.log("paper_revisor", "skipped",
+                   f"iter{iter_n}: revisor returned empty paper_md — bailing out of loop")
+            break
+
+        # Snapshot the pre-revise markdown so audit.iter{N}.json can be
+        # matched against the exact text it audited.
+        (paper_dir / f"paper.iter{iter_n}.md").write_text(md_path.read_text())
+        md_path.write_text(new_md)
+        bb.log("paper_revisor", "applied",
+               f"iter{iter_n}: {(result.get('revision_summary') or '')[:400]}")
+        _render_pdf_log(bb, md_path, paper_dir / "paper.pdf")
+
+    iterations = iter_n  # last iteration we actually ran (last audit, possibly revise)
+
+    # Audited PDF: render against the FINAL markdown using the FINAL audit.
+    # Both are paired — audit_result is the audit of md_path's current content
+    # at loop exit. Highlights show what's still concerning in the final
+    # paper, not what was originally flagged before revision.
+    _render_audited_pdf_log(bb, md_path, audit_result,
+                            paper_dir / "paper_audited.pdf")
 
     # 4. Record manuscript metadata on the hypothesis
     h.manuscript_path = str(md_path.relative_to(output_dir))

@@ -18,6 +18,23 @@
 
 FROM python:3.12-slim
 
+# WeasyPrint runtime deps. Without these, importing weasyprint inside
+# Python raises OSError at import time; pdf_render.render_pdf catches
+# that and returns a clear error, but rendering would never succeed.
+#  - libpango / libpangoft2 / libharfbuzz : text shaping
+#  - libcairo2 : vector + raster compositor
+#  - libfontconfig1 + fonts-dejavu : font resolution + a baseline font
+#  - shared-mime-info : MIME sniffing for embedded images
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libpango-1.0-0 \
+        libpangoft2-1.0-0 \
+        libharfbuzz0b \
+        libcairo2 \
+        libfontconfig1 \
+        fonts-dejavu-core \
+        shared-mime-info \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Source must be in place before `pip install .` because pyproject.toml's

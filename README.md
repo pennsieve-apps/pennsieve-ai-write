@@ -24,13 +24,24 @@ Outputs:
 
 ```
 OUTPUT_DIR/
-├── blackboard.json              # updated with manuscript metadata
+├── blackboard.json                          # updated with manuscript metadata
 ├── papers/<HYPOTHESIS_ID>/
-│   ├── paper.md                 # the manuscript
-│   ├── audit.json               # auditor verdicts
-│   └── figures/                 # PNGs extracted from the executed notebook
-└── usage.jsonl                  # per-LLM-call cost log
+│   ├── paper.md                             # the manuscript (latest, post-revise if applicable)
+│   ├── paper.pdf                            # rendered version of the same
+│   ├── paper_audited.pdf                    # pre-revise text with auditor highlights inline
+│   ├── paper_audited.md                     # the audited-paper markdown (with <mark> spans)
+│   ├── audit.json                           # auditor verdicts
+│   ├── paper.preRevision.<timestamp>.md     # only if the revisor ran
+│   └── figures/                             # PNGs extracted from the executed notebook
+├── notebook.jsonl                           # blackboard event log
+└── usage.jsonl                              # per-LLM-call cost log
 ```
+
+The two PDFs serve different purposes:
+- **`paper.pdf`** — clean rendering of the final manuscript. What you'd hand to a colleague.
+- **`paper_audited.pdf`** — the **pre-revise** text with `<mark>`-wrapped highlights showing what the auditor flagged (yellow = partial, red = unsupported, orange = unverifiable). Useful for understanding what was concerning before the revisor went to work, even after the revisor has produced the cleaned-up text.
+
+PDF rendering is best-effort: if WeasyPrint's system libraries aren't available at runtime, `paper.md` and `audit.json` are still produced and the rendering failure is logged but doesn't fail the workflow.
 
 ## Environment
 

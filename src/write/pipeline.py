@@ -15,7 +15,7 @@ from pathlib import Path
 from write.agents import paper_auditor, paper_revisor, paper_writer
 from write.blackboard import Blackboard, Hypothesis
 from write.llm import LLMClient
-from write.tools import notebook_extract
+from write.tools import audit_render, notebook_extract, pdf_render
 
 
 def select_hypothesis(bb: Blackboard, hypothesis_id: str) -> Hypothesis:
@@ -109,6 +109,7 @@ def run_write(
         executed_nb_path=nb_path,
         paper_dir=paper_dir,
     )
+    _render_pdf_log(bb, md_path, paper_dir / "paper.pdf")
 
     # 2. Audit
     print("\n--- paper_auditor ---")
@@ -131,6 +132,11 @@ def run_write(
     print(f"  audit: {len(claims)} claims "
           f"({counts['supported']} sup / {counts['partial']} par / "
           f"{counts['unsupported']} uns / {counts['unverifiable']} unv)")
+
+    # Render the audited PDF off the PRE-REVISE markdown — highlights are
+    # only meaningful against the text the auditor actually read.
+    _render_audited_pdf_log(bb, md_path, audit_result,
+                            paper_dir / "paper_audited.pdf")
 
     iterations = 1
 
@@ -165,6 +171,10 @@ def run_write(
             md_path.write_text(new_md)
             iterations = 2
             bb.log("paper_revisor", "applied", (result.get("revision_summary") or "")[:400])
+            # Re-render paper.pdf to reflect the revised text. The audited
+            # PDF stays as the pre-revise version (highlights point at the
+            # text the auditor actually saw).
+            _render_pdf_log(bb, md_path, paper_dir / "paper.pdf")
         else:
             bb.log("paper_revisor", "skipped", "revisor returned empty paper_md")
     elif revise:
@@ -183,6 +193,35 @@ def run_write(
     bb.log("write", "done",
            f"{h.id}: manuscript={h.manuscript_path} iterations={iterations} "
            f"cost=${h.manuscript_cost_usd:.4f}")
+
+
+def _render_pdf_log(bb: Blackboard, md_path: Path, pdf_path: Path) -> None:
+    """Render md_path → pdf_path; log success / failure on the blackboard.
+    PDF generation is best-effort — a render failure must not break a run
+    that has already produced the canonical paper.md.
+    """
+    err = pdf_render.render_pdf(md_path, pdf_path)
+    if err:
+        bb.log("pdf_render", "warn",
+               f"{pdf_path.name}: {err[:400]}")
+        print(f"  [pdf] warn: {err[:200]}")
+    else:
+        bb.log("pdf_render", "wrote", str(pdf_path.name))
+        print(f"  [pdf] {pdf_path.name}")
+
+
+def _render_audited_pdf_log(bb: Blackboard, md_path: Path,
+                            audit_result: dict, pdf_path: Path) -> None:
+    """Render the audited PDF (paper.md + audit highlights). Best-effort,
+    same contract as _render_pdf_log."""
+    err = audit_render.render_audited_paper(md_path, audit_result, pdf_path)
+    if err:
+        bb.log("pdf_render", "warn",
+               f"{pdf_path.name}: {err[:400]}")
+        print(f"  [pdf] warn: {err[:200]}")
+    else:
+        bb.log("pdf_render", "wrote", str(pdf_path.name))
+        print(f"  [pdf] {pdf_path.name}")
 
 
 def _cost_from_usage(usage_log: list[dict]) -> float:

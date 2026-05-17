@@ -12,7 +12,12 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from write.agents import paper_auditor, paper_revisor, paper_writer
+from write.agents import (
+    discussion_enhancer,
+    paper_auditor,
+    paper_revisor,
+    paper_writer,
+)
 from write.blackboard import Blackboard, Hypothesis
 from write.llm import LLMClient
 from write.tools import audit_render, notebook_extract, pdf_render
@@ -111,7 +116,40 @@ def run_write(
     )
     _render_pdf_log(bb, md_path, paper_dir / "paper.pdf")
 
-    # 2. Audit ⇄ Revise loop. Up to VP_WRITE_MAX_AUDIT_ITERS rounds (default 3).
+    # 2. (Optional) STORM-style Discussion enhancement. Runs BEFORE the audit
+    # loop so the auditor grades the enhanced Discussion text — if the
+    # synthesizer hallucinates a citation, the auditor catches it and the
+    # revisor fixes it. Disabled by VP_WRITE_ENHANCE_DISCUSSION=0. Adds
+    # one Sonnet survey pass (~$0.10) + one Opus synthesis pass (~$0.30).
+    enhance_discussion = os.environ.get("VP_WRITE_ENHANCE_DISCUSSION", "1") != "0"
+    if enhance_discussion:
+        print("\n--- discussion_enhancer (STORM-style) ---")
+        de_result = discussion_enhancer.enhance(
+            bb, client,
+            hypothesis=h,
+            executed_nb_path=nb_path,
+            paper_md_path=md_path,
+        )
+        new_discussion = de_result.get("discussion_md", "").strip()
+        # Persist the per-perspective Q&A artifact for downstream inspection.
+        (paper_dir / "discussion_perspectives.json").write_text(
+            json.dumps(de_result.get("perspectives_qa", {}), indent=2))
+        if new_discussion:
+            spliced = discussion_enhancer.splice_discussion(
+                md_path.read_text(), new_discussion)
+            (paper_dir / "paper.preDiscussionEnhance.md").write_text(md_path.read_text())
+            md_path.write_text(spliced)
+            bb.log("discussion_enhancer", "spliced",
+                   f"replaced Discussion with {len(new_discussion)} chars")
+            _render_pdf_log(bb, md_path, paper_dir / "paper.pdf")
+        else:
+            err = de_result.get("error") or "synthesizer returned empty discussion_md"
+            bb.log("discussion_enhancer", "skipped", err[:300])
+            print(f"  [discussion_enhancer] skipped: {err[:200]}")
+    else:
+        print("\n--- discussion_enhancer skipped (VP_WRITE_ENHANCE_DISCUSSION=0) ---")
+
+    # 3. Audit ⇄ Revise loop. Up to VP_WRITE_MAX_AUDIT_ITERS rounds (default 3).
     # Each round runs the auditor against the current paper.md; if unsupported
     # claims remain, run the revisor with an auto-generated note targeting
     # only those claims and re-loop. Exit when:

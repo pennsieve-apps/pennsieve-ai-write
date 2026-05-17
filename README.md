@@ -16,11 +16,15 @@ For the chosen hypothesis (set via `VP_WRITE_HYPOTHESIS_ID`, default `H1`):
 
 1. Locate the executed notebook the analyze stage produced (`<analysis_workdir>/analysis.ipynb`).
 2. **Paper Writer** (Opus): generate `paper.md` grounded in the notebook cells, the hypothesis context, the literature claims, and a citation-authoritative bibliography pulled from CrossRef/DataCite.
-3. **Audit ⇄ Revise loop**, up to `VP_WRITE_MAX_AUDIT_ITERS` iterations (default 3):
+3. **(Optional) Discussion Enhancer** — STORM-style two-stage rewrite of the Discussion section. Disabled with `VP_WRITE_ENHANCE_DISCUSSION=0`. Adds:
+   - **Survey** (Sonnet): four fixed personas (Skeptical Reviewer, Methodologist, Domain Expert, Reproducibility Analyst) each generate 2 questions + one-paragraph answers grounded in cell outputs + methods-critic concerns + the authoritative bibliography.
+   - **Synthesize** (Opus): fold the 8 Q&A pairs into 4-6 paragraphs of coherent Discussion prose, splicing in place of the existing section.
+   - The enhanced Discussion goes through the audit loop below, so synthesizer hallucinations get caught and revised.
+4. **Audit ⇄ Revise loop**, up to `VP_WRITE_MAX_AUDIT_ITERS` iterations (default 3):
    - **Paper Auditor** (Sonnet): fact-check every numerical claim, citation, methodology statement, and dataset claim against the source artifacts. Produces per-iteration `audit.iter{N}.json` (and `audit.json` always tracking the latest) with per-claim `supported | partial | unsupported | unverifiable` verdicts.
    - Exit if the audit reports 0 unsupported claims, or max iters reached, or `VP_WRITE_REVISE=0`.
    - Otherwise **Paper Revisor** (Sonnet) runs with an auto-generated note targeting the unsupported claims, producing a new `paper.md`. The pre-revise text is snapshotted to `paper.iter{N}.md` so each audit JSON can be paired against the exact text it reviewed.
-4. Write the updated blackboard, manuscript markdown, audit JSON, and PDFs to `OUTPUT_DIR/`.
+5. Write the updated blackboard, manuscript markdown, audit JSON, perspective Q&A, and PDFs to `OUTPUT_DIR/`.
 
 Outputs:
 
@@ -38,6 +42,8 @@ OUTPUT_DIR/
 │   ├── audit.iter3.json           # iter-3 audit — if loop ran
 │   ├── paper.iter1.md             # pre-revise snapshot — matches audit.iter1.json's text
 │   ├── paper.iter2.md             # pre-revise snapshot — matches audit.iter2.json's text
+│   ├── paper.preDiscussionEnhance.md   # paper.md BEFORE discussion enhancer ran (if it ran)
+│   ├── discussion_perspectives.json    # the 4 personas × 2 Q&A pairs from the survey stage
 │   └── figures/                   # PNGs extracted from the executed notebook
 ├── notebook.jsonl                 # blackboard event log
 └── usage.jsonl                    # per-LLM-call cost log
@@ -58,6 +64,7 @@ The platform injects all the standard processor env vars (`INPUT_DIR`, `OUTPUT_D
 | Var | Default | Purpose |
 |-----|---------|---------|
 | `VP_WRITE_HYPOTHESIS_ID` | `H1` | Which hypothesis on the blackboard to write a manuscript for. |
+| `VP_WRITE_ENHANCE_DISCUSSION` | `1` | If `0`, skip the STORM-style Discussion enhancer (saves ~$0.40 / paper, leaves the writer's first-pass Discussion in place). |
 | `VP_WRITE_REVISE` | `1` | If `0`, run a single audit pass and skip the revisor entirely. |
 | `VP_WRITE_MAX_AUDIT_ITERS` | `3` | Hard cap on audit ⇄ revise iterations. Loop also exits early on 0 unsupported claims. Worst-case cost = N × (one auditor call + one revisor call) ≈ $1-1.50 per iteration at Sonnet rates. |
 

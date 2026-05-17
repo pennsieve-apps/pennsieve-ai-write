@@ -1,0 +1,12 @@
+__pycache__/
+*.py[co]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+
+# Local dev outputs
+out/
+*.local.json

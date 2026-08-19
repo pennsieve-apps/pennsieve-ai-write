@@ -5,10 +5,8 @@ generates a manuscript for the hypothesis selected via
 `$VP_WRITE_HYPOTHESIS_ID` (default `H1`), and writes the updated blackboard
 plus `papers/<HX>/{paper.md, audit.json, figures/}` to `$OUTPUT_DIR`.
 
-Auth model: same as the analyze stage. The platform colocates an
-`llm-governor-proxy` sidecar in every LLM-enabled ECS task and injects
-`ANTHROPIC_BASE_URL=http://localhost:8765`. The pennsieve-llm SDK reads
-that env var and routes traffic at the sidecar.
+Auth model: the platform injects `LLM_GOVERNOR_FUNCTION_NAME`; the
+`pennsieve-llm` SDK invokes that Lambda with the execution run ID attached.
 
 Compliance note: this processor makes outbound HTTPS to api.crossref.org
 and api.datacite.org. That's incompatible with compliant-mode no-internet-
@@ -41,7 +39,8 @@ def main() -> int:
     print(f"  EXECUTION_RUN_ID={execution_run_id}")
     print(f"  WORKFLOW_INSTANCE_ID={workflow_instance_id}")
     print(f"  DEPLOYMENT_MODE={deployment_mode or '<unset>'}")
-    print(f"  ANTHROPIC_BASE_URL={os.environ.get('ANTHROPIC_BASE_URL', '<unset>')}")
+    print(f"  LLM_GOVERNOR_FUNCTION_NAME="
+          f"{os.environ.get('LLM_GOVERNOR_FUNCTION_NAME', '<unset>')}")
     print(f"  VP_WRITE_HYPOTHESIS_ID={hypothesis_id}")
     print(f"  VP_WRITE_REVISE={do_revise}")
 
@@ -60,14 +59,14 @@ def main() -> int:
         )
         return 2
 
-    # Sanity-check the platform contract: ANTHROPIC_BASE_URL must be set for
-    # the governor proxy. If missing, the SDK would default to api.anthropic.com
-    # with no API key and fail in a confusing way.
-    if not os.environ.get("ANTHROPIC_BASE_URL"):
+    # Write uses direct governor Lambda transport; unlike Analyze, it does not
+    # run a Claude Agent SDK session and therefore does not require the local
+    # Anthropic-compatible sidecar.
+    if not os.environ.get("LLM_GOVERNOR_FUNCTION_NAME"):
         print(
-            "ERROR: ANTHROPIC_BASE_URL is not set. The write stage requires "
-            "the LLM governor sidecar (platform-managed). Confirm the compute "
-            "node has `enable_llm_access = true`.",
+            "ERROR: LLM_GOVERNOR_FUNCTION_NAME is not set. The write stage "
+            "requires direct access to the platform-managed LLM governor. "
+            "Confirm the compute node has `enable_llm_access = true`.",
             file=sys.stderr,
         )
         return 2
@@ -95,6 +94,14 @@ def main() -> int:
     client = LLMClient()
 
     try:
+        bb.model_assignments = client.preflight()
+        bb.log(
+            "write", "models",
+            ", ".join(
+                f"{logical}={assignment['model_id']}"
+                for logical, assignment in sorted(bb.model_assignments.items())
+            ),
+        )
         run_write(
             bb, client,
             hypothesis_id=hypothesis_id,

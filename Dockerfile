@@ -6,8 +6,8 @@
 #
 # Runtime contract (platform-managed, no Dockerfile changes needed):
 #   - Runs as uid:gid 1000:1000 (ECS task-def override).
-#   - HOME=/tmp, ANTHROPIC_BASE_URL=http://localhost:8765, and the
-#     llm-governor-proxy sidecar are injected by the provisioner.
+#   - HOME=/tmp and LLM_GOVERNOR_FUNCTION_NAME are injected by the
+#     provisioner for direct governor Lambda transport.
 #
 # Note on compliance: this processor makes outbound HTTPS to api.crossref.org
 # and api.datacite.org for DOI metadata enrichment (authoritative

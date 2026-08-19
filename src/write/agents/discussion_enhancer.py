@@ -2,13 +2,13 @@
 
 Two-stage process inspired by Shao et al. (2024; doi:10.18653/v1/2024.naacl-long.347):
 
-  1. **Survey** (Sonnet, ~$0.10) — generate 2 perspective-grounded questions
+  1. **Survey** (synthesis role) — generate 2 perspective-grounded questions
      per fixed persona (Skeptical Reviewer, Methodologist, Domain Expert,
      Reproducibility Analyst), and draft a one-paragraph answer per question
      against the paper's source artifacts (notebook cells, methods-critic
      concerns, critic attacks, authoritative bibliography, RAG chunks).
 
-  2. **Synthesize** (Opus, ~$0.30) — fold the eight Q&A pairs into a single
+  2. **Synthesize** (reasoning role) — fold the eight Q&A pairs into a single
      coherent Discussion section of 4-6 paragraphs, with explicit cell
      references and DOI citations.
 

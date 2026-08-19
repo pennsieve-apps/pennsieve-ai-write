@@ -1,8 +1,8 @@
 """Paper Writer — turns one hypothesis + its executed notebook into a paper.
 
-One Opus call per hypothesis. Reads the executed notebook produced by the
-analyze stage, extracts cell sources + outputs + figures, and produces a
-structured ~4–6 page paper in markdown form.
+One reasoning-role call per hypothesis. Reads the executed notebook produced
+by the analyze stage, extracts cell sources + outputs + figures, and produces
+a structured ~4–6 page paper in markdown form.
 
 Adapted from `virtual-postdoc/agents/paper_writer.py`. Differences:
   - Imports rewritten for the `write.*` namespace.

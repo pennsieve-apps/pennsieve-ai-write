@@ -128,6 +128,8 @@ class Blackboard:
     papers_enriched: dict = field(default_factory=dict)
     prior_papers: list[dict] = field(default_factory=list)
     cross_dataset_compatibility: list[dict] = field(default_factory=list)
+    degraded: list[dict] = field(default_factory=list)
+    model_assignments: dict = field(default_factory=dict)
     notebook: list[dict] = field(default_factory=list)
 
     def log(self, agent: str, action: str, content: str = "") -> None:
@@ -163,13 +165,14 @@ class Blackboard:
             research_question=raw.get("research_question", ""),
             subsystem=raw.get("subsystem", ""),
         )
+        # Copy every plain field by name. A literal allow-list silently drops
+        # fields added upstream; nested dataclass collections are rebuilt below.
+        dataclass_valued = {
+            "literature_claims", "dataset_summaries", "hypotheses",
+            "critic_reviews", "director_brief",
+        }
         for k, v in raw.items():
-            if k in ("papers_seen", "deep_evidence", "deep_read_stats",
-                     "collaboration_candidates", "notebook", "lab_profile",
-                     "search_queries", "research_question", "subsystem",
-                     "run_id", "search_query", "max_iterations",
-                     "iterations_completed", "stop_reason", "papers_enriched",
-                     "prior_papers", "cross_dataset_compatibility"):
+            if k in cls.__dataclass_fields__ and k not in dataclass_valued:
                 setattr(bb, k, v)
         bb.literature_claims = [_to(Claim, x) for x in raw.get("literature_claims") or []]
         bb.dataset_summaries = [_to(DatasetSummary, x) for x in raw.get("dataset_summaries") or []]

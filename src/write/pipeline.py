@@ -29,9 +29,20 @@ def select_hypothesis(bb: Blackboard, hypothesis_id: str) -> Hypothesis:
     matches = [h for h in bb.hypotheses if h.id == hypothesis_id]
     if not matches:
         available = ", ".join(sorted(h.id for h in bb.hypotheses)) or "(none)"
+        # Say WHY the board is empty when upstream told us — "Available:
+        # (none)" alone sends whoever reads the log on a four-repo trace.
+        upstream = ""
+        if not bb.hypotheses:
+            stages = sorted({d.get("stage", "?") for d in (bb.degraded or [])})
+            cause = (f"upstream stages failed or were skipped: {', '.join(stages)}"
+                     if stages else
+                     "hypothesize produced none — check its log for skip reasons "
+                     "(usually 0 literature claims from scout)")
+            upstream = f" The blackboard has no hypotheses at all: {cause}."
         raise ValueError(
             f"Hypothesis {hypothesis_id!r} not found on blackboard. "
-            f"Available: {available}. Set VP_WRITE_HYPOTHESIS_ID to one of them."
+            f"Available: {available}.{upstream} "
+            f"Set VP_WRITE_HYPOTHESIS_ID to one of them."
         )
     h = matches[-1]  # latest iteration wins if there are revisions
     if not (h.analysis_summary or h.analysis_workdir):

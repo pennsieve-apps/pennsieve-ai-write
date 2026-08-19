@@ -119,7 +119,7 @@ def call_json(
         agent=agent,
     )
     prefilled = supports_prefill and client.supports_prefill(model)
-    text = ("{" if prefilled else "") + msg.content[0].text
+    text = ("{" if prefilled else "") + first_text(msg)
     return extract_json(text)
 
 
@@ -133,3 +133,18 @@ def strip_attack_tag(attack: str) -> str:
         if s.startswith(tag):
             return s[len(tag):].strip()
     return s
+
+
+def first_text(msg) -> str:
+    """The first text block's text.
+
+    Never index `content[0]` directly: models with thinking enabled put a
+    `thinking` block first (Opus 5 does this even when the request omits the
+    `thinking` parameter), so a role pinned or degraded onto one would raise
+    AttributeError on a `ThinkingBlock`.
+    """
+    for block in msg.content:
+        if getattr(block, "type", None) == "text":
+            return block.text
+    kinds = ", ".join(getattr(b, "type", "?") for b in msg.content) or "(empty)"
+    raise ValueError(f"No text block in model response; got: {kinds}")

@@ -120,7 +120,7 @@ def run_write(
     # loop so the auditor grades the enhanced Discussion text — if the
     # synthesizer hallucinates a citation, the auditor catches it and the
     # revisor fixes it. Disabled by VP_WRITE_ENHANCE_DISCUSSION=0. Adds
-    # one Sonnet survey pass (~$0.10) + one Opus synthesis pass (~$0.30).
+    # one synthesis-role survey pass + one reasoning-role synthesis pass.
     enhance_discussion = os.environ.get("VP_WRITE_ENHANCE_DISCUSSION", "1") != "0"
     if enhance_discussion:
         print("\n--- discussion_enhancer (STORM-style) ---")
@@ -303,7 +303,7 @@ def _cost_from_usage(usage_log: list[dict]) -> float:
     budget-aware UX. The governor's audit table is the source of truth for
     actual billed amounts.
     """
-    # USD per million tokens (input, output) by logical model name.
+    # USD per million tokens (input, output) by concrete model family.
     rates = {
         "opus":   (15.0, 75.0),
         "sonnet": ( 3.0, 15.0),
@@ -311,8 +311,13 @@ def _cost_from_usage(usage_log: list[dict]) -> float:
     }
     total = 0.0
     for entry in usage_log:
-        model = entry.get("model", "")
-        in_rate, out_rate = rates.get(model, (0.0, 0.0))
+        model_id = entry.get("model_id", "").lower()
+        family = next((name for name in rates if name in model_id), None)
+        # Backward compatibility for usage events produced before concrete
+        # model IDs were recorded.
+        if family is None:
+            family = entry.get("logical_model") or entry.get("model", "")
+        in_rate, out_rate = rates.get(family, (0.0, 0.0))
         total += entry.get("input_tokens", 0)  * in_rate  / 1_000_000
         total += entry.get("output_tokens", 0) * out_rate / 1_000_000
     return round(total, 6)

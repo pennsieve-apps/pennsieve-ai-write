@@ -80,11 +80,7 @@ def revise(
         )
     except Exception as e:
         bb.log(AGENT, "error", f"{hypothesis.id}: {e!r}")
-        return {
-            "paper_md": paper_md,
-            "revision_summary": f"Revisor call failed ({e!r}); paper unchanged.",
-            "error": repr(e),
-        }
+        raise RuntimeError(f"Paper revision failed for hypothesis {hypothesis.id}") from e
     return {
         "paper_md": parsed.get("paper_md", "") or paper_md,
         "revision_summary": parsed.get("revision_summary", "") or "",

@@ -15,15 +15,15 @@ Reads the **blackboard** (a JSON document carrying datasets, literature, hypothe
 For the chosen hypothesis (set via `VP_WRITE_HYPOTHESIS_ID`, default `H1`):
 
 1. Locate the executed notebook the analyze stage produced (`<analysis_workdir>/analysis.ipynb`).
-2. **Paper Writer** (Opus): generate `paper.md` grounded in the notebook cells, the hypothesis context, the literature claims, and a citation-authoritative bibliography pulled from CrossRef/DataCite.
+2. **Paper Writer** (reasoning role): generate `paper.md` grounded in the notebook cells, the hypothesis context, the literature claims, and a citation-authoritative bibliography pulled from CrossRef/DataCite.
 3. **(Optional) Discussion Enhancer** — STORM-style two-stage rewrite of the Discussion section. Disabled with `VP_WRITE_ENHANCE_DISCUSSION=0`. Adds:
-   - **Survey** (Sonnet): four fixed personas (Skeptical Reviewer, Methodologist, Domain Expert, Reproducibility Analyst) each generate 2 questions + one-paragraph answers grounded in cell outputs + methods-critic concerns + the authoritative bibliography.
-   - **Synthesize** (Opus): fold the 8 Q&A pairs into 4-6 paragraphs of coherent Discussion prose, splicing in place of the existing section.
+   - **Survey** (synthesis role): four fixed personas (Skeptical Reviewer, Methodologist, Domain Expert, Reproducibility Analyst) each generate 2 questions + one-paragraph answers grounded in cell outputs + methods-critic concerns + the authoritative bibliography.
+   - **Synthesize** (reasoning role): fold the 8 Q&A pairs into 4-6 paragraphs of coherent Discussion prose, splicing in place of the existing section.
    - The enhanced Discussion goes through the audit loop below, so synthesizer hallucinations get caught and revised.
 4. **Audit ⇄ Revise loop**, up to `VP_WRITE_MAX_AUDIT_ITERS` iterations (default 3):
-   - **Paper Auditor** (Sonnet): fact-check every numerical claim, citation, methodology statement, and dataset claim against the source artifacts. Produces per-iteration `audit.iter{N}.json` (and `audit.json` always tracking the latest) with per-claim `supported | partial | unsupported | unverifiable` verdicts.
+   - **Paper Auditor** (synthesis role): fact-check every numerical claim, citation, methodology statement, and dataset claim against the source artifacts. Produces per-iteration `audit.iter{N}.json` (and `audit.json` always tracking the latest) with per-claim `supported | partial | unsupported | unverifiable` verdicts.
    - Exit if the audit reports 0 unsupported claims, or max iters reached, or `VP_WRITE_REVISE=0`.
-   - Otherwise **Paper Revisor** (Sonnet) runs with an auto-generated note targeting the unsupported claims, producing a new `paper.md`. The pre-revise text is snapshotted to `paper.iter{N}.md` so each audit JSON can be paired against the exact text it reviewed.
+   - Otherwise **Paper Revisor** (synthesis role) runs with an auto-generated note targeting the unsupported claims, producing a new `paper.md`. The pre-revise text is snapshotted to `paper.iter{N}.md` so each audit JSON can be paired against the exact text it reviewed.
 5. Write the updated blackboard, manuscript markdown, audit JSON, perspective Q&A, and PDFs to `OUTPUT_DIR/`.
 
 Outputs:
@@ -59,14 +59,55 @@ PDF rendering is best-effort: if WeasyPrint's system libraries aren't available 
 
 ## Environment
 
-The platform injects all the standard processor env vars (`INPUT_DIR`, `OUTPUT_DIR`, `EXECUTION_RUN_ID`, etc.) and the governor-proxy plumbing (`ANTHROPIC_BASE_URL`, `HOME`, `LLM_GOVERNOR_FUNCTION_NAME`). This processor adds two of its own:
+The platform injects the standard processor variables and
+`LLM_GOVERNOR_FUNCTION_NAME`. Write uses direct governor Lambda transport; it
+does not require the Anthropic-compatible sidecar used by Analyze's Agent SDK.
 
 | Var | Default | Purpose |
 |-----|---------|---------|
+| `INPUT_DIR` | `/mnt/efs/input` | Analyze output containing `blackboard.json` and the executed notebook. |
+| `OUTPUT_DIR` | `/mnt/efs/output` | Destination for the updated blackboard and manuscript artifacts. |
+| `EXECUTION_RUN_ID` | `local-dev` | Platform run identifier used for governor attribution. |
+| `WORKFLOW_INSTANCE_ID` | `local-dev` | Platform workflow execution identifier. |
+| `LLM_GOVERNOR_FUNCTION_NAME` | _(required)_ | Governor Lambda used for discovery, preflight, and all LLM calls. |
 | `VP_WRITE_HYPOTHESIS_ID` | `H1` | Which hypothesis on the blackboard to write a manuscript for. |
 | `VP_WRITE_ENHANCE_DISCUSSION` | `1` | If `0`, skip the STORM-style Discussion enhancer (saves ~$0.40 / paper, leaves the writer's first-pass Discussion in place). |
 | `VP_WRITE_REVISE` | `1` | If `0`, run a single audit pass and skip the revisor entirely. |
 | `VP_WRITE_MAX_AUDIT_ITERS` | `3` | Hard cap on audit ⇄ revise iterations. Loop also exits early on 0 unsupported claims. Worst-case cost = N × (one auditor call + one revisor call) ≈ $1-1.50 per iteration at Sonnet rates. |
+| `VP_MODEL_OPUS` | dynamically resolved | Explicit pin for reasoning-role writer/synthesizer calls. |
+| `VP_MODEL_SONNET` | dynamically resolved | Explicit pin for synthesis-role survey/auditor/revisor calls. |
+| `VP_LLM_MAX_RETRIES` | `1` | SDK retries within each routed request attempt. |
+
+## Model routing
+
+At startup, Write discovers the governor's effective allow-list and verifies
+that its reasoning and synthesis assignments are invokable. For the allow-list
+that motivated v0.0.2, both roles resolve to Sonnet 4.6. Direct requests stream
+their responses and retry up to three bounded attempts when the governor
+reports `model_not_allowed` or IAM `access_denied`. Prefill and sampling
+compatibility follow the concrete routed model, including after a retry.
+
+Explicit `VP_MODEL_*` pins are validated during preflight and do not silently
+fall back. Sonnet 4.6 is the reasoning quality floor; using a lower model for
+the reasoning role requires a deliberate pin and a scientific-quality review.
+
+## Pennsieve Test smoke check
+
+A healthy v0.0.2 run should print these lines before `paper_writer`:
+
+```text
+--- LLM preflight ---
+  assignments:
+    opus    (reasoning) -> us.anthropic.claude-sonnet-4-6 [ranked]
+    sonnet  (synthesis) -> us.anthropic.claude-sonnet-4-6 [ranked]
+
+[llm] → paper_writer logical=opus model=us.anthropic.claude-sonnet-4-6 attempt=1/3 ...
+```
+
+Success requires `paper_writer` and every executed auditor/revisor phase to
+complete. Those phases fail the stage if their LLM call fails, preventing an
+empty audit from being mistaken for zero unsupported claims. Discussion
+enhancement remains optional and logs a skip if its survey or synthesis fails.
 
 ## Compliance notes
 
@@ -78,7 +119,21 @@ If you need manuscripts on compliant-mode workloads, the path forward is to eith
 
 ```bash
 pip install -e .[dev]
-INPUT_DIR=path/to/analyze-output OUTPUT_DIR=/tmp/write-out python -m write.main
+INPUT_DIR=path/to/analyze-output \
+OUTPUT_DIR=/tmp/write-out \
+LLM_GOVERNOR_FUNCTION_NAME=your-governor-lambda-name \
+python -m write.main
 ```
 
 `pip install -e .[dev]` brings in pytest + ruff.
+
+## Blackboard compatibility
+
+Write preserves upstream `degraded` and `model_assignments` fields while
+loading the Analyze blackboard, then records its own stage-local assignments.
+Cumulative, stage-namespaced model provenance remains deferred to the shared
+`pennsieve-ai-core` blackboard contract.
+
+## Status
+
+**v0.0.2 candidate — locally validated, not yet tested in Pennsieve compute.**

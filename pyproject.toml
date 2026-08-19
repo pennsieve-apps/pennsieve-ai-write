@@ -1,13 +1,12 @@
 [project]
 name = "pennsieve-ai-write"
-version = "0.0.1"
+version = "0.0.2"
 description = "Pennsieve compute-node processor — stage 4 of the pennsieve-ai research pipeline. Reads an analyzed hypothesis + its executed notebook and produces a scientific manuscript (writer → auditor → revisor)."
 requires-python = ">=3.12"
 dependencies = [
-    # pennsieve-llm — all LLM traffic flows through the per-compute-node
-    # governor Lambda. The SDK reads $LLM_GOVERNOR_URL (in ECS) or invokes
-    # the function directly (in Lambda) and adds SigV4 from the task role.
-    # Pulls in anthropic, httpx, boto3 transitively.
+    # pennsieve-llm — governor transport for model discovery, preflight, and
+    # every manuscript-generation call. The SDK invokes the function named by
+    # $LLM_GOVERNOR_FUNCTION_NAME and attaches execution-run attribution.
     "pennsieve-llm>=0.5.0",
 
     "json-repair>=0.30",
@@ -35,3 +34,6 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 write = ["prompts/*.md"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]

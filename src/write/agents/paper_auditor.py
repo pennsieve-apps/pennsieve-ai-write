@@ -4,7 +4,7 @@ Reads paper.md, the executed notebook, the authoritative bibliography, and
 the hypothesis context. Returns a structured list of claims with per-claim
 verdicts: `supported` | `partial` | `unsupported` | `unverifiable`.
 
-One Sonnet call per paper. Vendored from `virtual-postdoc/agents/paper_auditor.py`
+One synthesis-role call per paper. Vendored from `virtual-postdoc/agents/paper_auditor.py`
 with imports rewired for the `write.*` namespace and the synthesis-paper
 `audit_combined` variant dropped (v0 is per-hypothesis only).
 """
@@ -110,11 +110,7 @@ def audit(
         )
     except Exception as e:
         bb.log(AGENT, "error", f"{hypothesis.id}: {e!r}")
-        return {
-            "summary": f"Auditor call failed ({e!r}); no claims verified.",
-            "claims": [],
-            "error": repr(e),
-        }
+        raise RuntimeError(f"Paper audit failed for hypothesis {hypothesis.id}") from e
     return {
         "summary": parsed.get("summary", "") or "",
         "claims": parsed.get("claims", []) or [],

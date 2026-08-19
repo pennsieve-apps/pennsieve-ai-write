@@ -103,11 +103,11 @@ def call_json(
     """Call the model and parse a JSON object from its response.
 
     For models that support it we use the canonical "prefill `{`" trick.
-    Opus 4.5+ extended-thinking models reject assistant-message prefill —
-    the conversation must end with a user message — so for those we skip
-    the prefill and rely on `extract_json` to recover JSON.
+    Some concrete model families reject assistant-message prefill, so
+    compatibility is checked after routing rather than inferred from the
+    logical role.
     """
-    supports_prefill = model not in ("opus",)
+    supports_prefill = client.supports_prefill(model)
 
     msg = client.messages_create(
         model=model,
@@ -118,7 +118,8 @@ def call_json(
         run_id=run_id,
         agent=agent,
     )
-    text = ("{" if supports_prefill else "") + msg.content[0].text
+    prefilled = supports_prefill and client.supports_prefill(model)
+    text = ("{" if prefilled else "") + msg.content[0].text
     return extract_json(text)
 
 

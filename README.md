@@ -82,7 +82,7 @@ does not require the Anthropic-compatible sidecar used by Analyze's Agent SDK.
 
 At startup, Write discovers the governor's effective allow-list and verifies
 that its reasoning and synthesis assignments are invokable. For the allow-list
-that motivated v0.1.1, both roles resolve to Sonnet 4.6. Direct requests stream
+that motivated v0.0.2, both roles resolve to Sonnet 4.6. Direct requests stream
 their responses and retry up to three bounded attempts when the governor
 reports `model_not_allowed` or IAM `access_denied`. Prefill and sampling
 compatibility follow the concrete routed model, including after a retry.
@@ -93,7 +93,7 @@ the reasoning role requires a deliberate pin and a scientific-quality review.
 
 ## Pennsieve Test smoke check
 
-A healthy v0.1.1 run should print these lines before `paper_writer`:
+A healthy v0.0.2 run should print these lines before `paper_writer`:
 
 ```text
 --- LLM preflight ---
@@ -136,4 +136,4 @@ Cumulative, stage-namespaced model provenance remains deferred to the shared
 
 ## Status
 
-**v0.1.1 candidate — locally validated, not yet tested in Pennsieve compute.**
+**v0.0.2 candidate — locally validated, not yet tested in Pennsieve compute.**

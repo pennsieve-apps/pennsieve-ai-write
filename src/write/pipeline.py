@@ -193,7 +193,8 @@ def run_write(
     # Each iteration's audit is persisted to audit.iter{N}.json; audit.json
     # always tracks the latest. Each pre-revise markdown snapshot is written
     # to paper.iter{N}.md so a reviewer can match audit.iter{N}.json against
-    # the exact text the auditor reviewed.
+    # the exact text the auditor reviewed. Exiting the loop with unsupported
+    # claims retains these artifacts and fails the stage below.
     audit_result: dict = {}
     counts: dict = {
         "supported": 0, "partial": 0, "unsupported": 0, "unverifiable": 0,

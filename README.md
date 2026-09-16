@@ -1,7 +1,5 @@
 # pennsieve-ai-write
 
-Local hardening update: the default hypothesis is `auto` (the analyzed candidate). Writing requires accepted hypotheses, sound methods and an executed notebook. DOI enrichment is shared with the auditor; unsupported final claims fail the stage while retaining drafts. Every audit has a matching manuscript snapshot; Pandoc exports `paper.tex` and `review.json` records readiness. Docker deployment is still pending.
-
 Stage 4 of the `pennsieve-ai-*` research pipeline.
 
 ```
@@ -24,7 +22,9 @@ For the chosen hypothesis (set via `VP_WRITE_HYPOTHESIS_ID`, default `auto`):
    - The enhanced Discussion goes through the audit loop below, so synthesizer hallucinations get caught and revised.
 4. **Audit ⇄ Revise loop**, up to `VP_WRITE_MAX_AUDIT_ITERS` iterations (default 3):
    - **Paper Auditor** (synthesis role): fact-check every numerical claim, citation, methodology statement, and dataset claim against the source artifacts. Produces per-iteration `audit.iter{N}.json` (and `audit.json` always tracking the latest) with per-claim `supported | partial | unsupported | unverifiable` verdicts.
-   - Exit if the audit reports 0 unsupported claims, or max iters reached, or `VP_WRITE_REVISE=0`.
+   - Exit successfully when the audit reports 0 unsupported claims. Reaching
+     the iteration cap, or disabling revision while unsupported claims remain,
+     blocks the stage after retaining all review artifacts.
    - Otherwise **Paper Revisor** (synthesis role) runs with an auto-generated note targeting the unsupported claims, producing a new `paper.md`. The pre-revise text is snapshotted to `paper.iter{N}.md` so each audit JSON can be paired against the exact text it reviewed.
 5. Write the updated blackboard, manuscript markdown, audit JSON, perspective Q&A, and PDFs to `OUTPUT_DIR/`.
 
@@ -35,6 +35,7 @@ OUTPUT_DIR/
 ├── blackboard.json                # updated with manuscript metadata
 ├── papers/<HYPOTHESIS_ID>/
 │   ├── paper.md                   # final manuscript (post all revise iterations)
+│   ├── paper.tex                  # Pandoc LaTeX export (when Pandoc succeeds)
 │   ├── paper.pdf                  # rendered version of the same
 │   ├── paper_audited.pdf          # final text with FINAL audit's highlights
 │   ├── paper_audited.md           # the audited-paper markdown (<mark> spans embedded)
@@ -42,6 +43,7 @@ OUTPUT_DIR/
 │   ├── audit.iter1.json           # iter-1 audit (against writer output)
 │   ├── audit.iter2.json           # iter-2 audit (against iter-1 revise output) — if loop ran
 │   ├── audit.iter3.json           # iter-3 audit — if loop ran
+│   ├── review.json                # ready_for_review or blocked, with final counts
 │   ├── paper.iter1.md             # pre-revise snapshot — matches audit.iter1.json's text
 │   ├── paper.iter2.md             # pre-revise snapshot — matches audit.iter2.json's text
 │   ├── paper.preDiscussionEnhance.md   # paper.md BEFORE discussion enhancer ran (if it ran)
@@ -55,7 +57,10 @@ The two PDFs serve different purposes:
 - **`paper.pdf`** — clean rendering of the final manuscript. What you'd hand to a colleague.
 - **`paper_audited.pdf`** — the **final** text with `<mark>`-wrapped highlights showing what the **final** audit flagged (yellow = partial, red = unsupported, orange = unverifiable). After the loop converges, this shows what's still concerning in the manuscript that ships — useful for downstream human review.
 
-Each `audit.iter{N}.json` is paired with `paper.iter{N}.md` (the text that iteration audited). A reviewer can trace the convergence: read the iter-1 audit against iter-1 markdown, then see what iter-2 markdown changed in response, and so on.
+Each `audit.iter{N}.json` is paired with `paper.iter{N}.md` (the text that
+iteration audited, including the final pass). A reviewer can trace the
+convergence: read the iter-1 audit against iter-1 markdown, then see what
+iter-2 markdown changed in response, and so on.
 
 PDF rendering is best-effort: if WeasyPrint's system libraries aren't available at runtime, `paper.md` and `audit.json` are still produced and the rendering failure is logged but doesn't fail the workflow.
 
@@ -84,10 +89,12 @@ does not require the Anthropic-compatible sidecar used by Analyze's Agent SDK.
 
 At startup, Write discovers the governor's effective allow-list and verifies
 that its reasoning and synthesis assignments are invokable. For the allow-list
-that motivated v0.0.2, both roles resolve to Sonnet 4.6. Direct requests stream
-their responses and retry up to three bounded attempts when the governor
-reports `model_not_allowed` or IAM `access_denied`. Prefill and sampling
-compatibility follow the concrete routed model, including after a retry.
+previously observed in Pennsieve Test, both roles resolved to Sonnet 4.6.
+v0.0.4 discovers and verifies the current assignments at startup. Direct
+requests stream their responses and retry up to three bounded attempts when
+the governor reports `model_not_allowed` or IAM `access_denied`. Prefill and
+sampling compatibility follow the concrete routed model, including after a
+retry.
 
 Explicit `VP_MODEL_*` pins are validated during preflight and do not silently
 fall back. Sonnet 4.6 is the reasoning quality floor; using a lower model for
@@ -95,7 +102,8 @@ the reasoning role requires a deliberate pin and a scientific-quality review.
 
 ## Pennsieve Test smoke check
 
-A healthy v0.0.2 run should print these lines before `paper_writer`:
+A healthy run prints the effective assignments before `paper_writer`. In the
+previously observed Test configuration, the key lines were:
 
 ```text
 --- LLM preflight ---
@@ -107,9 +115,10 @@ A healthy v0.0.2 run should print these lines before `paper_writer`:
 ```
 
 Success requires `paper_writer` and every executed auditor/revisor phase to
-complete. Those phases fail the stage if their LLM call fails, preventing an
-empty audit from being mistaken for zero unsupported claims. Discussion
-enhancement remains optional and logs a skip if its survey or synthesis fails.
+complete, a nonempty audit with valid claim verdicts, and zero unsupported
+claims in the final audit. A blocked run retains its drafts, audit snapshots,
+LaTeX export, and `review.json` for inspection. Discussion enhancement remains
+optional and logs a skip if its survey or synthesis fails.
 
 ## Compliance notes
 
@@ -138,4 +147,8 @@ Cumulative, stage-namespaced model provenance remains deferred to the shared
 
 ## Status
 
-**v0.0.2 candidate — locally validated, not yet tested in Pennsieve compute.**
+**v0.0.4 release candidate — locally validated; Pennsieve Test rerun pending.**
+This candidate automatically selects the analyzed hypothesis, validates the
+accepted hypothesis/methods/notebook handoff, treats unsupported final claims
+as a blocking result, and emits paired review snapshots, LaTeX, and a compact
+readiness record. The rerun will confirm the current Bedrock assignments.

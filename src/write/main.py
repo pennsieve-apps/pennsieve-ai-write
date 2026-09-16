@@ -2,8 +2,9 @@
 
 Reads the analyze stage's blackboard from `$INPUT_DIR/blackboard.json`,
 generates a manuscript for the hypothesis selected via
-`$VP_WRITE_HYPOTHESIS_ID` (default `H1`), and writes the updated blackboard
-plus `papers/<HX>/{paper.md, audit.json, figures/}` to `$OUTPUT_DIR`.
+`$VP_WRITE_HYPOTHESIS_ID` (default `auto`, selecting the analyzed candidate),
+and writes the updated blackboard plus the manuscript and review artifacts
+under `papers/<HX>/` in `$OUTPUT_DIR`.
 
 Auth model: the platform injects `LLM_GOVERNOR_FUNCTION_NAME`; the
 `pennsieve-llm` SDK invokes that Lambda with the execution run ID attached.

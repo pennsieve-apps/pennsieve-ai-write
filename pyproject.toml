@@ -1,13 +1,13 @@
 [project]
 name = "pennsieve-ai-write"
-version = "0.0.4"
+version = "0.0.5"
 description = "Pennsieve compute-node processor — stage 4 of the pennsieve-ai research pipeline. Reads an analyzed hypothesis + its executed notebook and produces a scientific manuscript (writer → auditor → revisor)."
 requires-python = ">=3.12"
 dependencies = [
     # pennsieve-llm — governor transport for model discovery, preflight, and
     # every manuscript-generation call. The SDK invokes the function named by
     # $LLM_GOVERNOR_FUNCTION_NAME and attaches execution-run attribution.
-    "pennsieve-llm>=0.5.0",
+    "pennsieve-llm>=0.6.1,<0.7",
 
     "json-repair>=0.30",
     "httpx>=0.27",

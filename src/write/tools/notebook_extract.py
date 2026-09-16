@@ -17,6 +17,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
+def validate_execution(path: Path) -> None:
+    notebook = json.loads(path.read_text())
+    code = [c for c in notebook.get("cells", [])
+            if c.get("cell_type") == "code" and "".join(c.get("source", "")).strip()]
+    if not code or any(c.get("execution_count") is None for c in code):
+        raise ValueError("Notebook contains no executed code or has unexecuted cells")
+    if any(o.get("output_type") == "error" for c in code for o in c.get("outputs", [])):
+        raise ValueError("Notebook contains execution errors")
+
+
 @dataclass
 class ExtractedCell:
     index: int

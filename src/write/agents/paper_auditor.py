@@ -50,6 +50,8 @@ def _format_dataset_context(bb: Blackboard) -> str:
     for d in bb.dataset_summaries[:3]:
         block = [
             f"### {d.id}: {d.title}",
+            f"  dataset DOI: {d.doi}",
+            f"  repository URL: {d.url}",
             f"  bucket_uri: {d.bucket_uri}",
         ]
         if d.file_tree:
@@ -111,7 +113,14 @@ def audit(
     except Exception as e:
         bb.log(AGENT, "error", f"{hypothesis.id}: {e!r}")
         raise RuntimeError(f"Paper audit failed for hypothesis {hypothesis.id}") from e
+    claims = parsed.get("claims")
+    verdicts = {"supported", "partial", "unsupported", "unverifiable"}
+    if not isinstance(claims, list) or not claims or any(
+        not isinstance(c, dict) or c.get("verdict") not in verdicts
+        for c in claims
+    ):
+        raise ValueError("Paper audit must contain nonempty claims with valid verdicts")
     return {
         "summary": parsed.get("summary", "") or "",
-        "claims": parsed.get("claims", []) or [],
+        "claims": claims,
     }

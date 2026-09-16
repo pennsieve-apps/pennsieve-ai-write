@@ -1,5 +1,7 @@
 # pennsieve-ai-write
 
+Local hardening update: the default hypothesis is `auto` (the analyzed candidate). Writing requires accepted hypotheses, sound methods and an executed notebook. DOI enrichment is shared with the auditor; unsupported final claims fail the stage while retaining drafts. Every audit has a matching manuscript snapshot; Pandoc exports `paper.tex` and `review.json` records readiness. Docker deployment is still pending.
+
 Stage 4 of the `pennsieve-ai-*` research pipeline.
 
 ```
@@ -12,7 +14,7 @@ Reads the **blackboard** (a JSON document carrying datasets, literature, hypothe
 
 ## Pipeline
 
-For the chosen hypothesis (set via `VP_WRITE_HYPOTHESIS_ID`, default `H1`):
+For the chosen hypothesis (set via `VP_WRITE_HYPOTHESIS_ID`, default `auto`):
 
 1. Locate the executed notebook the analyze stage produced (`<analysis_workdir>/analysis.ipynb`).
 2. **Paper Writer** (reasoning role): generate `paper.md` grounded in the notebook cells, the hypothesis context, the literature claims, and a citation-authoritative bibliography pulled from CrossRef/DataCite.
@@ -70,7 +72,7 @@ does not require the Anthropic-compatible sidecar used by Analyze's Agent SDK.
 | `EXECUTION_RUN_ID` | `local-dev` | Platform run identifier used for governor attribution. |
 | `WORKFLOW_INSTANCE_ID` | `local-dev` | Platform workflow execution identifier. |
 | `LLM_GOVERNOR_FUNCTION_NAME` | _(required)_ | Governor Lambda used for discovery, preflight, and all LLM calls. |
-| `VP_WRITE_HYPOTHESIS_ID` | `H1` | Which hypothesis on the blackboard to write a manuscript for. |
+| `VP_WRITE_HYPOTHESIS_ID` | `auto` | Which hypothesis on the blackboard to write a manuscript for. |
 | `VP_WRITE_ENHANCE_DISCUSSION` | `1` | If `0`, skip the STORM-style Discussion enhancer (saves ~$0.40 / paper, leaves the writer's first-pass Discussion in place). |
 | `VP_WRITE_REVISE` | `1` | If `0`, run a single audit pass and skip the revisor entirely. |
 | `VP_WRITE_MAX_AUDIT_ITERS` | `3` | Hard cap on audit ⇄ revise iterations. Loop also exits early on 0 unsupported claims. Worst-case cost = N × (one auditor call + one revisor call) ≈ $1-1.50 per iteration at Sonnet rates. |

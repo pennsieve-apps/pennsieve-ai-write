@@ -141,7 +141,7 @@ class Blackboard:
         }
         self.notebook.append(entry)
         suffix = f" — {content}" if content else ""
-        print(f"[{entry['ts']}] {agent}: {action}{suffix}")
+        print(f"[{entry['ts']}] {agent}: {action}{suffix}", flush=True)
 
     def hypotheses_at(self, iteration: int) -> list[Hypothesis]:
         return [h for h in self.hypotheses if h.iteration == iteration]

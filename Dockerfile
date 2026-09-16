@@ -32,6 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libcairo2 \
         libfontconfig1 \
         fonts-dejavu-core \
+        pandoc \
         shared-mime-info \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
@@ -45,5 +46,6 @@ COPY src/ ./src/
 RUN pip install --no-cache-dir .
 
 ENV PYTHONPATH=/app/src
+ENV PYTHONUNBUFFERED=1
 
 ENTRYPOINT ["python", "-m", "write.main"]

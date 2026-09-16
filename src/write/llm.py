@@ -206,6 +206,10 @@ class LLMClient:
         elapsed = time.monotonic() - t0
         in_tok = resp.usage.input_tokens
         out_tok = resp.usage.output_tokens
+        if in_tok == 0 and not getattr(self, "_warned_zero_usage", False):
+            print("  [llm] WARNING: governor reported zero input tokens; cost estimates are incomplete. "
+                  "Check governor usage telemetry.", flush=True)
+            self._warned_zero_usage = True
         stop = resp.stop_reason or ""
         stop_note = f" stop={stop}" if stop and stop != "end_turn" else ""
         print(
@@ -221,6 +225,7 @@ class LLMClient:
             "logical_model": model,
             "model_id": bedrock_model,
             "input_tokens": in_tok,
+            "input_usage_suspect": in_tok == 0,
             "output_tokens": out_tok,
             "elapsed_s": round(elapsed, 2),
             "stop_reason": stop,

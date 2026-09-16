@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -26,6 +27,14 @@ from write.tools import audit_render, notebook_extract, pdf_render
 def select_hypothesis(bb: Blackboard, hypothesis_id: str) -> Hypothesis:
     """Pick the hypothesis to write a manuscript for. Fails with a clear error
     if the requested ID isn't on the blackboard or has no analysis output."""
+    if hypothesis_id == "auto":
+        final = bb.iterations_completed or max((h.iteration for h in bb.hypotheses), default=0)
+        candidates = [h for h in bb.hypotheses_at(final) if h.analysis_workdir and h.analysis_summary]
+        if not candidates:
+            raise ValueError("No analyzed hypothesis is available for writing")
+        hypothesis_id = candidates[0].id
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", hypothesis_id):
+        raise ValueError("Hypothesis ID must be a safe directory name")
     matches = [h for h in bb.hypotheses if h.id == hypothesis_id]
     if not matches:
         available = ", ".join(sorted(h.id for h in bb.hypotheses)) or "(none)"
@@ -44,13 +53,21 @@ def select_hypothesis(bb: Blackboard, hypothesis_id: str) -> Hypothesis:
             f"Available: {available}.{upstream} "
             f"Set VP_WRITE_HYPOTHESIS_ID to one of them."
         )
-    h = matches[-1]  # latest iteration wins if there are revisions
+    h = max(matches, key=lambda h: h.iteration)
     if not (h.analysis_summary or h.analysis_workdir):
         raise ValueError(
             f"Hypothesis {h.id} has no analyze-stage output (analysis_summary "
             f"and analysis_workdir are both empty). The analyze stage must run "
             f"successfully before the write stage can produce a manuscript."
         )
+    reviews = [r for r in bb.reviews_at(h.iteration) if r.hypothesis_id == h.id]
+    if not reviews or reviews[-1].verdict != "accept":
+        raise ValueError(f"Hypothesis {h.id} was not accepted by the hypothesis critic")
+    critique = h.methods_critique or {}
+    if critique.get("verdict") != "sound" or any(
+        i.get("severity") == "high" for i in critique.get("issues", [])
+    ):
+        raise ValueError(f"Hypothesis {h.id} has not passed methods review")
     return h
 
 
@@ -107,6 +124,10 @@ def run_write(
     """End-to-end write pipeline for the selected hypothesis."""
     h = select_hypothesis(bb, hypothesis_id)
     nb_path = locate_notebook(input_dir, h)
+    notebook_extract.validate_execution(nb_path)
+    max_iters = int(os.environ.get("VP_WRITE_MAX_AUDIT_ITERS", "3"))
+    if max_iters < 1:
+        raise ValueError("VP_WRITE_MAX_AUDIT_ITERS must be at least 1")
 
     print(f"\n--- write pipeline: {h.id} ---")
     print(f"  notebook: {nb_path}")
@@ -173,7 +194,6 @@ def run_write(
     # always tracks the latest. Each pre-revise markdown snapshot is written
     # to paper.iter{N}.md so a reviewer can match audit.iter{N}.json against
     # the exact text the auditor reviewed.
-    max_iters = int(os.environ.get("VP_WRITE_MAX_AUDIT_ITERS", "3"))
     audit_result: dict = {}
     counts: dict = {
         "supported": 0, "partial": 0, "unsupported": 0, "unverifiable": 0,
@@ -181,6 +201,7 @@ def run_write(
 
     for iter_n in range(1, max_iters + 1):
         print(f"\n--- paper_auditor (iter {iter_n}/{max_iters}) ---")
+        (paper_dir / f"paper.iter{iter_n}.md").write_text(md_path.read_text())
         audit_result = paper_auditor.audit(
             bb, client,
             hypothesis=h,
@@ -214,7 +235,7 @@ def run_write(
             print(f"  → VP_WRITE_REVISE=0; staying audit-only")
             break
         if iter_n >= max_iters:
-            print(f"  → max iters reached ({max_iters}); accepting current state")
+            print(f"  → max iters reached ({max_iters}); retaining draft for review")
             break
 
         # Revise: build a targeted note from the unsupported claims.
@@ -269,6 +290,21 @@ def run_write(
     h.audit_summary = audit_result.get("summary", "")
     h.audit_counts = counts
     h.manuscript_finished_at = datetime.utcnow().isoformat(timespec="seconds")
+
+    from write.tools.tex_export import export_tex
+    export_error = export_tex(md_path)
+    bb.log("tex_export", "warn" if export_error else "wrote", export_error or "paper.tex")
+    review = {
+        "hypothesis_id": h.id,
+        "status": "blocked" if counts["unsupported"] else "ready_for_review",
+        "audit_counts": counts,
+        "human_review_required": True,
+        "tex_export_error": export_error,
+    }
+    (paper_dir / "review.json").write_text(json.dumps(review, indent=2))
+    if counts["unsupported"]:
+        raise RuntimeError(f"{h.id}: {counts['unsupported']} unsupported manuscript claims remain; "
+                           "draft and audits retained for review")
 
     bb.log("write", "done",
            f"{h.id}: manuscript={h.manuscript_path} iterations={iterations} "

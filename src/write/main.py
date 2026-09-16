@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import sys
 from pathlib import Path
 
@@ -24,13 +25,18 @@ from write.llm import LLMClient
 from write.pipeline import run_write
 
 
+def _terminate(signum, frame):
+    raise KeyboardInterrupt("termination requested")
+
+
 def main() -> int:
+    signal.signal(signal.SIGTERM, _terminate)
     input_dir = Path(os.environ.get("INPUT_DIR", "/mnt/efs/input"))
     output_dir = Path(os.environ.get("OUTPUT_DIR", "/mnt/efs/output"))
     execution_run_id = os.environ.get("EXECUTION_RUN_ID", "local-dev")
     workflow_instance_id = os.environ.get("WORKFLOW_INSTANCE_ID", "local-dev")
     deployment_mode = os.environ.get("DEPLOYMENT_MODE", "")
-    hypothesis_id = os.environ.get("VP_WRITE_HYPOTHESIS_ID", "H1")
+    hypothesis_id = os.environ.get("VP_WRITE_HYPOTHESIS_ID", "auto")
     do_revise = os.environ.get("VP_WRITE_REVISE", "1") != "0"
 
     print("=== pennsieve-ai-write ===")
@@ -95,6 +101,7 @@ def main() -> int:
            f"{len(bb.literature_claims)} literature claims, "
            f"target hypothesis={hypothesis_id}")
 
+    bb.save(output_dir / "blackboard.json")
     client = LLMClient()
 
     try:
@@ -120,7 +127,7 @@ def main() -> int:
         _write_outputs(bb, client, output_dir)
         print(f"\nERROR: {e}", file=sys.stderr)
         return 2
-    except Exception as e:
+    except (Exception, KeyboardInterrupt) as e:
         bb.log("write", "fatal", repr(e))
         _write_outputs(bb, client, output_dir)
         raise

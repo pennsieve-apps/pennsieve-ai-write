@@ -92,6 +92,9 @@ def _format_authoritative_bibliography(bb: Blackboard, h: Hypothesis) -> str:
     missing = [d for d in citable if d not in enriched]
     if missing:
         enriched.update(doi_lookup.lookup_batch(missing))
+    # The auditor and revisor must see the same authoritative records as
+    # the writer, including DataCite dataset DOIs discovered here.
+    bb.papers_enriched = enriched
 
     dataset_dois = {
         (getattr(d, "doi", "") or "").strip().lower()
@@ -176,7 +179,7 @@ def _format_methods_critique(h: Hypothesis) -> list[str]:
     if not mc:
         return []
     verdict = (mc.get("verdict") or "").strip()
-    if not verdict or verdict.lower() == "sound":
+    if not verdict:
         return []
     lines = [
         "",

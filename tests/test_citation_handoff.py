@@ -1,5 +1,5 @@
 from write.agents import paper_writer, paper_auditor
-from write.blackboard import Blackboard, Hypothesis, DatasetSummary
+from pennsieve_ai_utils.blackboard import Blackboard, Hypothesis, DatasetSummary
 
 
 def test_datacite_metadata_is_shared_with_auditor(monkeypatch):

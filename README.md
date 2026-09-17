@@ -140,10 +140,10 @@ python -m write.main
 
 ## Blackboard compatibility
 
-Write preserves upstream `degraded` and `model_assignments` fields while
-loading the Analyze blackboard, then records its own stage-local assignments.
-Cumulative, stage-namespaced model provenance remains deferred to the shared
-`pennsieve-ai-core` blackboard contract.
+The shared `pennsieve-ai-utils` contract provides schema migrations and
+preserves fields introduced by any stage. Write retains upstream diagnostics
+and model provenance, then records its assignments under the `write` stage
+namespace.
 
 ## Status
 

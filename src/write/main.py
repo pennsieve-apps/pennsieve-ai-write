@@ -15,41 +15,36 @@ egress. We fail fast at startup if `DEPLOYMENT_MODE=compliant`.
 """
 from __future__ import annotations
 
-import json
 import os
-import signal
 import sys
-from pathlib import Path
 
-from write.blackboard import Blackboard
-from write.llm import LLMClient
+from pennsieve_ai_utils.llm import LLMClient
+from pennsieve_ai_utils.models import ModelNotAvailable
+from pennsieve_ai_utils.processor import (
+    ProcessorEnv,
+    install_sigterm_handler,
+    load_upstream_blackboard,
+    write_outputs,
+)
+
 from write.pipeline import run_write
 
-
-def _terminate(signum, frame):
-    raise KeyboardInterrupt("termination requested")
+STAGE = "write"
 
 
 def main() -> int:
-    signal.signal(signal.SIGTERM, _terminate)
-    input_dir = Path(os.environ.get("INPUT_DIR", "/mnt/efs/input"))
-    output_dir = Path(os.environ.get("OUTPUT_DIR", "/mnt/efs/output"))
-    execution_run_id = os.environ.get("EXECUTION_RUN_ID", "local-dev")
-    workflow_instance_id = os.environ.get("WORKFLOW_INSTANCE_ID", "local-dev")
+    install_sigterm_handler()
+    env = ProcessorEnv.from_environ()
     deployment_mode = os.environ.get("DEPLOYMENT_MODE", "")
     hypothesis_id = os.environ.get("VP_WRITE_HYPOTHESIS_ID", "auto")
     do_revise = os.environ.get("VP_WRITE_REVISE", "1") != "0"
-
-    print("=== pennsieve-ai-write ===")
-    print(f"  INPUT_DIR={input_dir}")
-    print(f"  OUTPUT_DIR={output_dir}")
-    print(f"  EXECUTION_RUN_ID={execution_run_id}")
-    print(f"  WORKFLOW_INSTANCE_ID={workflow_instance_id}")
-    print(f"  DEPLOYMENT_MODE={deployment_mode or '<unset>'}")
-    print(f"  LLM_GOVERNOR_FUNCTION_NAME="
-          f"{os.environ.get('LLM_GOVERNOR_FUNCTION_NAME', '<unset>')}")
-    print(f"  VP_WRITE_HYPOTHESIS_ID={hypothesis_id}")
-    print(f"  VP_WRITE_REVISE={do_revise}")
+    env.banner(
+        STAGE,
+        DEPLOYMENT_MODE=deployment_mode or "<unset>",
+        LLM_GOVERNOR_FUNCTION_NAME=os.environ.get("LLM_GOVERNOR_FUNCTION_NAME", "<unset>"),
+        VP_WRITE_HYPOTHESIS_ID=hypothesis_id,
+        VP_WRITE_REVISE=do_revise,
+    )
 
     # Compliance fail-fast. This processor needs outbound HTTPS to
     # api.crossref.org / api.datacite.org for the authoritative bibliography.
@@ -78,74 +73,58 @@ def main() -> int:
         )
         return 2
 
-    bb_path = input_dir / "blackboard.json"
-    if not bb_path.exists():
-        print(
-            f"ERROR: no blackboard.json at {bb_path} — the analyze stage did not "
-            f"produce its expected output, or the workflow wiring is wrong.",
-            file=sys.stderr,
-        )
+    bb = load_upstream_blackboard(env.input_dir / "blackboard.json", stage=STAGE,
+                                  upstream="the analyze stage", run_id=env.execution_run_id)
+    if bb is None:
         return 2
-
+    output_dir = env.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"\n--- loading blackboard from {bb_path} ---")
-    bb = Blackboard.load(bb_path)
-    bb.run_id = execution_run_id
-    if bb.degraded:
-        stages = ", ".join(sorted({d.get("stage", "?") for d in bb.degraded}))
-        print(f"  WARNING: upstream blackboard is degraded — skipped/failed stages: {stages}")
-        bb.log("write", "upstream_degraded", stages)
-    bb.log("write", "start",
+    bb.log(STAGE, "start",
            f"loaded blackboard: {len(bb.dataset_summaries)} datasets, "
            f"{len(bb.hypotheses)} hypotheses, "
            f"{len(bb.literature_claims)} literature claims, "
            f"target hypothesis={hypothesis_id}")
-
     bb.save(output_dir / "blackboard.json")
-    client = LLMClient()
+
+    # Writer and discussion synthesis reason; auditor and revisor synthesize.
+    client = LLMClient(stage=STAGE, roles=("reasoning", "synthesis"))
+    try:
+        assignments = client.preflight()
+    except ModelNotAvailable as e:
+        bb.log(STAGE, "fatal", f"model preflight failed: {e}")
+        write_outputs(bb, output_dir, client.usage_log)
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 5
+    for role, assignment in assignments.items():
+        bb.record_model_assignment(stage=STAGE, role=role, assignment=assignment)
+    bb.log(STAGE, "models",
+           ", ".join(f"{role}={a['model_id']}" for role, a in sorted(assignments.items())))
 
     try:
-        bb.model_assignments = client.preflight()
-        bb.log(
-            "write", "models",
-            ", ".join(
-                f"{logical}={assignment['model_id']}"
-                for logical, assignment in sorted(bb.model_assignments.items())
-            ),
-        )
         run_write(
             bb, client,
             hypothesis_id=hypothesis_id,
-            input_dir=input_dir,
+            input_dir=env.input_dir,
             output_dir=output_dir,
             revise=do_revise,
         )
     except (FileNotFoundError, ValueError) as e:
         # Pre-LLM failures (notebook missing, hypothesis ID invalid) — write
         # what we have and exit with a clear error so the workflow surfaces it.
-        bb.log("write", "fatal", repr(e))
-        _write_outputs(bb, client, output_dir)
+        bb.log(STAGE, "fatal", repr(e))
+        write_outputs(bb, output_dir, client.usage_log)
         print(f"\nERROR: {e}", file=sys.stderr)
         return 2
     except (Exception, KeyboardInterrupt) as e:
-        bb.log("write", "fatal", repr(e))
-        _write_outputs(bb, client, output_dir)
+        bb.log(STAGE, "fatal", repr(e))
+        write_outputs(bb, output_dir, client.usage_log)
         raise
 
-    bb.log("write", "done", "")
-    _write_outputs(bb, client, output_dir)
+    bb.log(STAGE, "done", "")
+    write_outputs(bb, output_dir, client.usage_log)
     print(f"\nWrote: {output_dir / 'blackboard.json'}")
     return 0
-
-
-def _write_outputs(bb: Blackboard, client: LLMClient, output_dir: Path) -> None:
-    """Persist blackboard + audit logs to OUTPUT_DIR."""
-    bb.save(output_dir / "blackboard.json")
-    nb = "\n".join(json.dumps(e) for e in bb.notebook)
-    (output_dir / "notebook.jsonl").write_text(nb + "\n" if nb else "")
-    ul = "\n".join(json.dumps(e) for e in client.usage_log)
-    (output_dir / "usage.jsonl").write_text(ul + "\n" if ul else "")
 
 
 if __name__ == "__main__":

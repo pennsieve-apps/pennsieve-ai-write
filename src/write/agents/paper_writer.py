@@ -19,9 +19,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from write.agents._common import call_json, format_datasets, load_prompt, strip_attack_tag
-from write.blackboard import Blackboard, Hypothesis
-from write.llm import LLMClient
-from write.tools import doi_lookup, notebook_extract
+from pennsieve_ai_utils.blackboard import Blackboard, Hypothesis
+from pennsieve_ai_utils.llm import LLMClient
+from pennsieve_ai_utils.tools import doi_lookup
+from write.tools import notebook_extract
 
 MODEL = "opus"
 AGENT = "paper_writer"

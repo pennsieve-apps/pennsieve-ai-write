@@ -13,8 +13,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from write.agents._common import call_json, load_prompt
-from write.blackboard import Blackboard, Hypothesis
-from write.llm import LLMClient
+from pennsieve_ai_utils.blackboard import Blackboard, Hypothesis
+from pennsieve_ai_utils.llm import LLMClient
 from write.tools import notebook_extract
 
 MODEL = "sonnet"

@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from write import pipeline
-from write.blackboard import Blackboard, Hypothesis, CriticReview
+from pennsieve_ai_utils.blackboard import Blackboard, Hypothesis, CriticReview
 from write.tools import tex_export
 
 

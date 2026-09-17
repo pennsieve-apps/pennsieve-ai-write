@@ -19,8 +19,8 @@ from write.agents import (
     paper_revisor,
     paper_writer,
 )
-from write.blackboard import Blackboard, Hypothesis
-from write.llm import LLMClient
+from pennsieve_ai_utils.blackboard import Blackboard, Hypothesis
+from pennsieve_ai_utils.llm import LLMClient
 from write.tools import audit_render, notebook_extract, pdf_render
 
 

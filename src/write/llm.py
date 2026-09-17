@@ -155,8 +155,8 @@ class LLMClient:
                 "messages": send_messages,
                 "max_tokens": max_tokens,
             }
-            if supports_sampling(bedrock_model):
-                kwargs["temperature"] = temperature
+            # anthropic 1.x removed temperature/top_p from the SDK; requests
+            # use the model default (no sampling parameter is sent).
 
             t0 = time.monotonic()
             try:

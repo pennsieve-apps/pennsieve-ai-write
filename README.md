@@ -90,7 +90,7 @@ does not require the Anthropic-compatible sidecar used by Analyze's Agent SDK.
 At startup, Write discovers the governor's effective allow-list and verifies
 that its reasoning and synthesis assignments are invokable. For the allow-list
 previously observed in Pennsieve Test, both roles resolved to Sonnet 4.6.
-v0.0.4 discovers and verifies the current assignments at startup. Direct
+v0.0.5 discovers and verifies the current assignments at startup. Direct
 requests stream their responses and retry up to three bounded attempts when
 the governor reports `model_not_allowed` or IAM `access_denied`. Prefill and
 sampling compatibility follow the concrete routed model, including after a
@@ -147,8 +147,10 @@ Cumulative, stage-namespaced model provenance remains deferred to the shared
 
 ## Status
 
-**v0.0.4 release candidate — locally validated; Pennsieve Test rerun pending.**
+**v0.0.5 release candidate — locally validated; Pennsieve Test rerun pending.**
 This candidate automatically selects the analyzed hypothesis, validates the
 accepted hypothesis/methods/notebook handoff, treats unsupported final claims
 as a blocking result, and emits paired review snapshots, LaTeX, and a compact
-readiness record. The rerun will confirm the current Bedrock assignments.
+readiness record. It requires the Anthropic 1.x-compatible Governor transport
+from `pennsieve-llm` 0.6.1. The rerun will confirm the current Bedrock
+assignments.

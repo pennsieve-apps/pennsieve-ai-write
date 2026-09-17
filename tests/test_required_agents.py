@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from write.agents import paper_auditor, paper_revisor
-from write.blackboard import Blackboard, Hypothesis
+from pennsieve_ai_utils.blackboard import Blackboard, Hypothesis
 
 
 def _hypothesis() -> Hypothesis:

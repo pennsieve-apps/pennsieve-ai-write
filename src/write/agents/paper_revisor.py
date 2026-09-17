@@ -19,8 +19,8 @@ from write.agents.paper_auditor import (
     _format_dataset_context,
     _format_hypothesis_context,
 )
-from write.blackboard import Blackboard, Hypothesis
-from write.llm import LLMClient
+from pennsieve_ai_utils.blackboard import Blackboard, Hypothesis
+from pennsieve_ai_utils.llm import LLMClient
 from write.tools import notebook_extract
 
 MODEL = "sonnet"

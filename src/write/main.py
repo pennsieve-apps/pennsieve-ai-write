@@ -93,7 +93,7 @@ def main() -> int:
         assignments = client.preflight()
     except ModelNotAvailable as e:
         bb.log(STAGE, "fatal", f"model preflight failed: {e}")
-        write_outputs(bb, output_dir, client.usage_log)
+        write_outputs(bb, output_dir, client.usage_log, stage=STAGE)
         print(f"ERROR: {e}", file=sys.stderr)
         return 5
     for role, assignment in assignments.items():
@@ -113,16 +113,16 @@ def main() -> int:
         # Pre-LLM failures (notebook missing, hypothesis ID invalid) — write
         # what we have and exit with a clear error so the workflow surfaces it.
         bb.log(STAGE, "fatal", repr(e))
-        write_outputs(bb, output_dir, client.usage_log)
+        write_outputs(bb, output_dir, client.usage_log, stage=STAGE)
         print(f"\nERROR: {e}", file=sys.stderr)
         return 2
     except (Exception, KeyboardInterrupt) as e:
         bb.log(STAGE, "fatal", repr(e))
-        write_outputs(bb, output_dir, client.usage_log)
+        write_outputs(bb, output_dir, client.usage_log, stage=STAGE)
         raise
 
     bb.log(STAGE, "done", "")
-    write_outputs(bb, output_dir, client.usage_log)
+    write_outputs(bb, output_dir, client.usage_log, stage=STAGE)
     print(f"\nWrote: {output_dir / 'blackboard.json'}")
     return 0
 

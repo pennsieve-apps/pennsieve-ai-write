@@ -69,6 +69,10 @@ PDF rendering is best-effort: if WeasyPrint's system libraries aren't available 
 The platform injects the standard processor variables and
 `LLM_GOVERNOR_FUNCTION_NAME`. Write uses direct governor Lambda transport; it
 does not require the Anthropic-compatible sidecar used by Analyze's Agent SDK.
+For local testing, you can set `VP_LLM_BACKEND=bedrock`. The stage then calls
+Bedrock directly with your own AWS profile. The
+[pennsieve-ai-utils README](https://github.com/Pennsieve/pennsieve-ai-utils#llm-client)
+explains this setting.
 
 | Var | Default | Purpose |
 |-----|---------|---------|
@@ -76,7 +80,10 @@ does not require the Anthropic-compatible sidecar used by Analyze's Agent SDK.
 | `OUTPUT_DIR` | `/mnt/efs/output` | Destination for the updated blackboard and manuscript artifacts. |
 | `EXECUTION_RUN_ID` | `local-dev` | Platform run identifier used for governor attribution. |
 | `WORKFLOW_INSTANCE_ID` | `local-dev` | Platform workflow execution identifier. |
-| `LLM_GOVERNOR_FUNCTION_NAME` | _(required)_ | Governor Lambda used for discovery, preflight, and all LLM calls. |
+| `VP_LLM_BACKEND` | `governor` | This chooses where model requests go. Use `bedrock` or `anthropic` only for local testing. |
+| `LLM_GOVERNOR_FUNCTION_NAME` | _(required for `governor`)_ | Governor Lambda used for discovery, preflight, and all LLM calls. |
+| `AWS_REGION` | _(required for `bedrock`)_ | This is the Bedrock region. Your AWS login comes from `AWS_PROFILE` or AWS keys. |
+| `VP_LOG_LLM_IO` | unset | Set this to `1` to save every model request and response, word for word, to `llm-io.write.jsonl`. |
 | `VP_WRITE_HYPOTHESIS_ID` | `auto` | Which hypothesis on the blackboard to write a manuscript for. |
 | `VP_WRITE_ENHANCE_DISCUSSION` | `1` | If `0`, skip the STORM-style Discussion enhancer (saves ~$0.40 / paper, leaves the writer's first-pass Discussion in place). |
 | `VP_WRITE_REVISE` | `1` | If `0`, run a single audit pass and skip the revisor entirely. |
@@ -87,31 +94,35 @@ does not require the Anthropic-compatible sidecar used by Analyze's Agent SDK.
 
 ## Model routing
 
-At startup, Write discovers the governor's effective allow-list and verifies
-that its reasoning and synthesis assignments are invokable. For the allow-list
-previously observed in Pennsieve Test, both roles resolved to Sonnet 4.6.
-v0.0.5 discovers and verifies the current assignments at startup. Direct
-requests stream their responses and retry up to three bounded attempts when
-the governor reports `model_not_allowed` or IAM `access_denied`. Prefill and
-sampling compatibility follow the concrete routed model, including after a
-retry.
+At startup, Write asks the governor which models it allows. It then sends a
+tiny test request to each model it plans to use. The reasoning role uses Opus
+5.5, then another Opus such as Opus 4.7, then Sonnet 5.5. The synthesis role
+uses Sonnet 5.5, or Sonnet 4.6 if 5.5 is not allowed. If no allowed model is
+strong enough for a role, the stage stops at startup.
 
-Explicit `VP_MODEL_*` pins are validated during preflight and do not silently
-fall back. Sonnet 4.6 is the reasoning quality floor; using a lower model for
-the reasoning role requires a deliberate pin and a scientific-quality review.
+Sometimes the governor refuses a model partway through a run. When that
+happens, Write picks the next allowed model and tries again. It tries at most
+three times. Responses are streamed. Each request is shaped for the model that
+actually answers it, including after a retry.
+
+You can choose a model yourself with a `VP_MODEL_*` setting. Write checks that
+model at startup. If it is not allowed, Write stops instead of quietly using a
+different model. To use a model weaker than Sonnet 5.5 for reasoning, name it on
+purpose with `VP_MODEL_REASONING`. If you do, check the quality of the output
+carefully.
 
 ## Pennsieve Test smoke check
 
-A healthy run prints the effective assignments before `paper_writer`. In the
-previously observed Test configuration, the key lines were:
+A healthy run prints the model chosen for each role before `paper_writer`
+starts. If the governor allows the 5.5 models, the key lines look like this:
 
 ```text
 --- LLM preflight ---
-  assignments:
-    opus    (reasoning) -> us.anthropic.claude-sonnet-4-6 [ranked]
-    sonnet  (synthesis) -> us.anthropic.claude-sonnet-4-6 [ranked]
+  role assignments:
+    reasoning  → us.anthropic.claude-opus-5-5 (rank 355)  [ranked]
+    synthesis  → us.anthropic.claude-sonnet-5-5 (rank 255)  [ranked]
 
-[llm] → paper_writer logical=opus model=us.anthropic.claude-sonnet-4-6 attempt=1/3 ...
+[llm] → paper_writer  role=opus  model=us.anthropic.claude-opus-5-5 ...
 ```
 
 Success requires `paper_writer` and every executed auditor/revisor phase to
@@ -135,6 +146,11 @@ OUTPUT_DIR=/tmp/write-out \
 LLM_GOVERNOR_FUNCTION_NAME=your-governor-lambda-name \
 python -m write.main
 ```
+
+You can also call Bedrock directly. To do that, remove
+`LLM_GOVERNOR_FUNCTION_NAME`. Add `VP_LLM_BACKEND=bedrock`,
+`AWS_PROFILE=<profile>` and `AWS_REGION=us-east-1`. Then name the models with
+`VP_MODEL_REASONING` and `VP_MODEL_SYNTHESIS`.
 
 `pip install -e .[dev]` brings in pytest + ruff.
 

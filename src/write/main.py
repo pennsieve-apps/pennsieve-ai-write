@@ -8,6 +8,8 @@ under `papers/<HX>/` in `$OUTPUT_DIR`.
 
 Auth model: the platform injects `LLM_GOVERNOR_FUNCTION_NAME`; the
 `pennsieve-llm` SDK invokes that Lambda with the execution run ID attached.
+Local runs can bypass the governor with `VP_LLM_BACKEND=bedrock` or
+`anthropic` (see `pennsieve_ai_utils.backend`).
 
 Compliance note: this processor makes outbound HTTPS to api.crossref.org
 and api.datacite.org. That's incompatible with compliant-mode no-internet-
@@ -18,6 +20,7 @@ from __future__ import annotations
 import os
 import sys
 
+from pennsieve_ai_utils.backend import llm_backend, missing_config
 from pennsieve_ai_utils.llm import LLMClient
 from pennsieve_ai_utils.models import ModelNotAvailable
 from pennsieve_ai_utils.processor import (
@@ -41,6 +44,7 @@ def main() -> int:
     env.banner(
         STAGE,
         DEPLOYMENT_MODE=deployment_mode or "<unset>",
+        VP_LLM_BACKEND=llm_backend(),
         LLM_GOVERNOR_FUNCTION_NAME=os.environ.get("LLM_GOVERNOR_FUNCTION_NAME", "<unset>"),
         VP_WRITE_HYPOTHESIS_ID=hypothesis_id,
         VP_WRITE_REVISE=do_revise,
@@ -64,13 +68,13 @@ def main() -> int:
     # Write uses direct governor Lambda transport; unlike Analyze, it does not
     # run a Claude Agent SDK session and therefore does not require the local
     # Anthropic-compatible sidecar.
-    if not os.environ.get("LLM_GOVERNOR_FUNCTION_NAME"):
-        print(
-            "ERROR: LLM_GOVERNOR_FUNCTION_NAME is not set. The write stage "
-            "requires direct access to the platform-managed LLM governor. "
-            "Confirm the compute node has `enable_llm_access = true`.",
-            file=sys.stderr,
-        )
+    missing = missing_config()
+    if missing:
+        hint = ("The write stage requires direct access to the platform-managed LLM "
+                "governor. Confirm the compute node has `enable_llm_access = true`."
+                if llm_backend() == "governor" else
+                f"Set them for VP_LLM_BACKEND={llm_backend()}.")
+        print(f"ERROR: {', '.join(missing)} not set. {hint}", file=sys.stderr)
         return 2
 
     bb = load_upstream_blackboard(env.input_dir / "blackboard.json", stage=STAGE,

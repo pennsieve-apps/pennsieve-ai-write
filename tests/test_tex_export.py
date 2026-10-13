@@ -120,3 +120,31 @@ def test_a_missing_latexmk_keeps_the_tex_and_says_so(tmp_path, monkeypatch):
     problem = tex_export.export_tex(paper)
     assert problem and "latexmk" in problem
     assert (tmp_path / "paper.tex").is_file(), "the source survives a missing compiler"
+
+
+@pytest.mark.skipif(not (shutil.which("pandoc") and shutil.which("latexmk")),
+                    reason="pandoc and latexmk are both needed to build a PDF")
+def test_the_title_does_not_collapse_into_the_author_line(tmp_path):
+    """The title is set at 20pt with its own leading.
+
+    Wrapping it in setspace's `spacing` environment silently dropped it back to
+    body size and let the author line ride up into it, because that
+    environment ends the paragraph before the new size takes hold.
+    """
+    paper = tmp_path / "paper.md"
+    paper.write_text(PAPER)
+    assert tex_export.export_tex(paper) is None
+    tex = (tmp_path / "paper.tex").read_text()
+    assert "\\begin{spacing}" not in (tmp_path / "biorxiv-preprint.cls").read_text()
+    assert "\\makefrontmatter" in tex
+
+
+@pytest.mark.skipif(not shutil.which("pandoc"), reason="pandoc is not installed")
+def test_the_class_carries_the_cc0_attribution(tmp_path, monkeypatch):
+    """CC0 requires nothing, but the record of where this came from should stay."""
+    monkeypatch.setenv("VP_WRITE_TEX_PDF", "0")
+    paper = tmp_path / "paper.md"
+    paper.write_text(PAPER)
+    tex_export.export_tex(paper)
+    header = (tmp_path / "biorxiv-preprint.cls").read_text()[:2000]
+    assert "CC0" in header and "cleveref" in header

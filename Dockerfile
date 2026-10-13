@@ -43,12 +43,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # LaTeX, for the bioRxiv preprint. bioRxiv does not typeset submissions and
 # asks for LaTeX to be compiled before upload, so this stage has to produce
 # the PDF itself: pdflatex through latexmk, the same toolchain as the lab's
-# other manuscripts. This is the minimal set, about 130MB. biorxiv-preprint.cls
-# falls back where titlesec and enumitem are missing rather than pulling in
-# texlive-latex-extra, which is roughly 1GB on its own.
+# other manuscripts.
+#
+# Sizes, measured: the four base packages are 131MB, texlive-latex-extra adds
+# 198MB and brings cleveref, titlesec, enumitem and changepage, which the
+# preprint class uses. texlive-fonts-extra would add 1859MB and is only needed
+# for Montserrat, so the class uses Helvetica instead and we leave it out.
+# biorxiv-preprint.cls still degrades where any of these are missing, so the
+# paper folder rebuilds on a plain TeX installation too.
         texlive-latex-base \
         texlive-latex-recommended \
         texlive-fonts-recommended \
+        texlive-latex-extra \
         lmodern \
         latexmk \
     && apt-get clean && rm -rf /var/lib/apt/lists/*

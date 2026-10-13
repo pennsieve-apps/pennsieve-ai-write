@@ -1,81 +1,114 @@
-%% biorxiv-preprint.cls — a clean preprint look for bioRxiv submissions.
+%% biorxiv-preprint.cls — a clean preprint layout for bioRxiv submissions.
 %%
-%% Written for the Pennsieve AI Co-Scientist and released under the same MIT
-%% licence as the rest of this repository. It is not copied from any existing
-%% template, because the widely circulated bioRxiv classes carry licences that
-%% do not sit with an MIT repository: the quantixed template is GPL-3.0 and
-%% the thelovelab fork states no licence at all.
+%% Adapted from the CC0 "Preprint_template" by its author at NYU Langone
+%% Health, who placed it in the public domain with no restrictions and offered
+%% no support. CC0 asks for nothing in return, but the good parts here are
+%% theirs: the cleveref set-up, the phantom subpanel trick that makes
+%% "Figure 1A" a working hyperlink, the caption and section styling, and the
+%% shape of the page. This file is MIT, like the rest of this repository.
+%%
+%% What was changed:
+%%   - The institutional violet and blue became a neutral navy and charcoal.
+%%   - Montserrat became Helvetica (helvet). Montserrat lives in
+%%     texlive-fonts-extra, which is 1.86GB on its own, against 198MB for
+%%     everything else this file needs.
+%%   - natbib and the .bib file are gone. Manuscripts here carry their
+%%     citations inline and their references as a list, so there is no
+%%     bibliography pass to go wrong.
+%%   - A front matter block was added for the generated fields: affiliations,
+%%     correspondence, the deposit's DOI and the bioRxiv article category.
 %%
 %% bioRxiv does not typeset submissions. Whatever PDF is uploaded is exactly
-%% what readers see, so there is no house style to match. This class aims only
-%% to be clean, readable and self-contained.
+%% what readers see, so there is no house style to match.
 %%
-%% Engine: pdflatex, via latexmk, the same toolchain as the lab's other
-%% manuscripts. No fontspec, no XeTeX-only packages.
+%% Engine: pdflatex, through latexmk. No fontspec, no XeTeX-only packages.
 %%
 %% Options:
-%%   twocolumn  two-column body, the usual preprint look (default is one)
-%%   lineno     numbered lines, for sending to reviewers
-%%   11pt/12pt  larger body text (default 10pt)
+%%   twocolumn    two-column body
+%%   lineno       numbered lines, for sending to reviewers
+%%   doublespace  double-spaced body, also for review
 %%
-%% Commands the document supplies:
-%%   \title, \author, \affiliation{n}{text}, \corresponding{email},
-%%   \datadoi{doi}, \runningtitle{short title}, \category{New Results}
-%% and opens the paper with \makefrontmatter{<abstract text>} in place of
-%% \maketitle, because in two columns the two must be set together.
+%% The document supplies \title, \author, \affiliation{n}{text},
+%% \corresponding{email}, \datadoi{doi}, \runningtitle{short title} and
+%% \category{New Results}, then opens with \makefrontmatter{<abstract>}.
 \NeedsTeXFormat{LaTeX2e}
 \ProvidesClass{biorxiv-preprint}[2026/10/13 bioRxiv preprint layout]
 
 \newif\ifbxv@twocol \bxv@twocolfalse
 \newif\ifbxv@lineno \bxv@linenofalse
-\DeclareOption{twocolumn}{\bxv@twocoltrue}
+\newif\ifbxv@dspace \bxv@dspacefalse
+\DeclareOption{twocolumn}{\bxv@twocoltrue\PassOptionsToClass{twocolumn}{extarticle}}
 \DeclareOption{lineno}{\bxv@linenotrue}
-\DeclareOption*{\PassOptionsToClass{\CurrentOption}{article}}
+\DeclareOption{doublespace}{\bxv@dspacetrue}
+\DeclareOption*{\PassOptionsToClass{\CurrentOption}{extarticle}}
 \ProcessOptions\relax
-\LoadClass[10pt,a4paper]{article}
-\ifbxv@twocol\RequirePackage{multicol}\fi
+% extarticle for the wider range of body sizes, falling back to article where
+% the extsizes package is not installed.
+\IfFileExists{extarticle.cls}
+  {\LoadClass[9pt,letterpaper]{extarticle}}
+  {\LoadClass[10pt,letterpaper]{article}}
 
 % ---------------------------------------------------------------- packages
 \RequirePackage[T1]{fontenc}
 \RequirePackage[utf8]{inputenc}
-% lmodern, titlesec and enumitem are not in a minimal TeX installation, and
-% the class should still build there, so each one is optional.
-\IfFileExists{lmodern.sty}{\RequirePackage{lmodern}}{}
 \RequirePackage[scaled=0.92]{helvet}
-\IfFileExists{microtype.sty}{\RequirePackage{microtype}}{}
-\RequirePackage[margin=1in,top=0.9in,bottom=1in]{geometry}
+\IfFileExists{lmodern.sty}{\RequirePackage{lmodern}}{}
+\RequirePackage[left=0.8in,right=0.8in,top=0.75in,bottom=0.85in]{geometry}
 \RequirePackage{graphicx}
-\RequirePackage{xcolor}
+\RequirePackage[table]{xcolor}
 \RequirePackage{booktabs}
 \RequirePackage{longtable}
 \RequirePackage{array}
 \RequirePackage{amsmath}
 \RequirePackage{amssymb}
-\RequirePackage{fancyhdr}
-\RequirePackage[font=small,labelfont=bf,labelsep=period]{caption}
+\RequirePackage{multicol}
+\RequirePackage{setspace}
 \RequirePackage{textcomp}
-% Pandoc emits \tightlist and, for images with sizes, these two.
+\RequirePackage[font=small,labelfont=bf,labelsep=colon,justification=raggedright,
+                singlelinecheck=false]{caption}
+\RequirePackage[labelfont=normalfont]{subcaption}
+% Pandoc emits these, so a generated body never fails on them.
 \providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
 \providecommand{\pandocbounded}[1]{#1}
-\RequirePackage[colorlinks=true,allcolors=bxvlink,breaklinks=true]{hyperref}
+
+\definecolor{Highlight}{HTML}{1B2A41}  % headings and caption labels: dark navy
+\definecolor{Accent}{HTML}{2F5D8F}     % links and superscripts: navy
+\definecolor{Muted}{HTML}{55606D}
+
+\RequirePackage[colorlinks=true,breaklinks=true,citecolor=Accent,
+                linkcolor=Accent,urlcolor=Accent]{hyperref}
 \RequirePackage{url}
 \urlstyle{same}
 
-% Line numbers are only for review copies, and lineno is not in every
-% TeX installation, so never fail the build over it.
+% Optional throughout: each of these lives in a larger TeX package, and the
+% class has to build on a minimal installation as well as in the image.
+\IfFileExists{ragged2e.sty}{\RequirePackage[document]{ragged2e}}{}
+\IfFileExists{microtype.sty}{\RequirePackage{microtype}}{}
+\IfFileExists{changepage.sty}{\RequirePackage{changepage}}{}
+\IfFileExists{enumitem.sty}{\RequirePackage{enumitem}%
+  \setlist{itemsep=1pt,parsep=0pt,topsep=4pt}}{}
+\IfFileExists{grffile.sty}{\RequirePackage{grffile}}{}
+\IfFileExists{pdflscape.sty}{\RequirePackage{pdflscape}}{}
+% cleveref is the reason for this template: \Cref{fig:1A} prints "Figure 1A"
+% and links to it. It has to be loaded after hyperref.
+\IfFileExists{cleveref.sty}{\RequirePackage[noabbrev,nameinlink]{cleveref}}{%
+  \providecommand{\Cref}[1]{\ref{#1}}\providecommand{\cref}[1]{\ref{#1}}}
 \ifbxv@lineno
-  \IfFileExists{lineno.sty}{\RequirePackage{lineno}\linenumbers}{%
+  \IfFileExists{lineno.sty}{\RequirePackage{lineno}%
+    \renewcommand\linenumberfont{\normalfont\small}\linenumbers}{%
     \ClassWarningNoLine{biorxiv-preprint}{lineno.sty not found; no line numbers}}
 \fi
 
-\definecolor{bxvlink}{HTML}{1A4F8B}
-\definecolor{bxvrule}{HTML}{C8D0D8}
-\definecolor{bxvmut}{HTML}{55606D}
+% Subpanel letters, so \Cref{fig:1A} reads "Figure 1A". A figure declares one
+% \phantomcaption\label{} per panel inside a subcaptiongroup.
+\renewcommand{\thesubfigure}{\Alph{subfigure}}
+\captionsetup[subfigure]{subrefformat=simple,labelformat=simple}
+\captionsetup{labelfont={color=Highlight,bf}}
 
 % ------------------------------------------------------------ title block
 \newcommand{\bxv@affiliations}{}
 \newcommand{\affiliation}[2]{%
-  \g@addto@macro\bxv@affiliations{\textsuperscript{#1}#2\par}}
+  \g@addto@macro\bxv@affiliations{\textcolor{Accent}{\textsuperscript{#1}}#2\par}}
 \newcommand{\bxv@corresponding}{}
 \newcommand{\corresponding}[1]{\renewcommand{\bxv@corresponding}{#1}}
 \newcommand{\bxv@datadoi}{}
@@ -86,86 +119,90 @@
 \newcommand{\runningtitle}[1]{\renewcommand{\bxv@runningtitle}{#1}}
 
 \newcommand{\bxv@titleblock}{%
-  \begingroup
-  \raggedright
-  {\color{bxvmut}\sffamily\footnotesize\MakeUppercase{\bxv@category}\par}
-  \vspace{2pt}
-  {\sffamily\bfseries\fontsize{19}{23}\selectfont\@title\par}
-  \vspace{9pt}
+  \begingroup\setlength{\parindent}{0pt}\raggedright
+  {\sffamily\footnotesize\color{Muted}\MakeUppercase{\bxv@category}\par}
+  \vspace{3pt}
+  % No setspace environment around the title. Its \par at \begin ends the
+  % paragraph before the new size takes hold, which drops the title back to
+  % body size and leaves the author line riding up into it. The second
+  % argument of \fontsize is the leading, so the tight title spacing the
+  % template wanted comes from there instead.
+  {\sffamily\bfseries\fontsize{20}{23}\selectfont\color{Highlight}\@title\par}
+  \vspace{5pt}
   {\sffamily\small\@author\par}
-  \vspace{7pt}
-  {\footnotesize\color{bxvmut}\bxv@affiliations}
-  \ifx\bxv@corresponding\@empty\else
-    {\footnotesize\color{bxvmut}Correspondence: \href{mailto:\bxv@corresponding}{\bxv@corresponding}\par}
-  \fi
-  \ifx\bxv@datadoi\@empty\else
-    {\footnotesize\color{bxvmut}Data: \href{https://doi.org/\bxv@datadoi}{doi:\bxv@datadoi}\par}
-  \fi
   \vspace{6pt}
-  {\color{bxvrule}\hrule height 0.8pt}
-  \vspace{10pt}
+  {\footnotesize\color{Muted}\bxv@affiliations}
+  \ifx\bxv@corresponding\@empty\else
+    {\footnotesize\color{Muted}Correspondence:
+     \href{mailto:\bxv@corresponding}{\bxv@corresponding}\par}\fi
+  \ifx\bxv@datadoi\@empty\else
+    {\footnotesize\color{Muted}Data:
+     \href{https://doi.org/\bxv@datadoi}{doi:\bxv@datadoi}\par}\fi
+  \vspace{7pt}{\color{Accent}\hrule height 1pt}\vspace{10pt}
   \endgroup}
 
 \newcommand{\bxv@abstractblock}[1]{%
   \begingroup\small
-  {\sffamily\bfseries\footnotesize ABSTRACT}\par\vspace{3pt}
+  {\sffamily\bfseries\footnotesize\color{Highlight}ABSTRACT}\par\vspace{3pt}
   #1\par
-  \vspace{8pt}{\color{bxvrule}\hrule height 0.4pt}\vspace{12pt}
-  \endgroup}
+  \vspace{8pt}{\color{Highlight}\hrule height 0.4pt}\vspace{11pt}\endgroup}
 
-% The whole front matter in one command, because in two-column mode the title
-% and abstract have to span both columns and so must be set together.
+% One command, because in two columns the title and abstract span both and so
+% have to be set together.
 \newcommand{\makefrontmatter}[1]{%
   \ifbxv@twocol
     \twocolumn[\bxv@titleblock\bxv@abstractblock{#1}]%
   \else
     \bxv@titleblock\bxv@abstractblock{#1}%
   \fi
-  % Without this a float asking for the top of the page lands above the
-  % title block, which looks like a layout bug in a one-column paper.
+  % Without this a float asking for the top of the page lands above the title.
   \suppressfloats[t]%
-  \thispagestyle{bxvfirst}}
+  \thispagestyle{bxvfirst}%
+  \ifbxv@dspace\doublespacing\fi}
 
 % ------------------------------------------------------------- headings
 \IfFileExists{titlesec.sty}{%
   \RequirePackage{titlesec}%
-  \titleformat{\section}{\sffamily\bfseries\large}{\thesection.}{0.5em}{}
-  \titleformat{\subsection}{\sffamily\bfseries\normalsize}{\thesubsection}{0.5em}{}
-  \titleformat{\subsubsection}{\sffamily\itshape\normalsize}{}{0em}{}
-  \titlespacing*{\section}{0pt}{13pt plus 3pt minus 2pt}{5pt}
-  \titlespacing*{\subsection}{0pt}{10pt plus 2pt minus 2pt}{3pt}%
+  \titleformat{\section}{\sffamily\normalsize\bfseries\color{Highlight}}%
+    {\thesection}{0.8em}{\MakeUppercase}
+  \titleformat{\subsection}{\sffamily\normalsize\bfseries\color{Highlight}}%
+    {\thesubsection}{0.8em}{}
+  \titleformat{\subsubsection}{\sffamily\small\itshape\color{Highlight}}%
+    {\thesubsubsection}{0.8em}{}
+  \titlespacing*{\section}{0pt}{12pt plus 3pt minus 2pt}{4pt}
+  \titlespacing*{\subsection}{0pt}{9pt plus 2pt minus 2pt}{2pt}
+  \titlespacing*{\subsubsection}{0pt}{7pt plus 2pt minus 2pt}{1pt}%
 }{%
-  % Same look without titlesec, which lives in a large TeX package that a
-  % minimal installation does not carry.
   \renewcommand{\section}{\@startsection{section}{1}{0pt}%
-    {13pt plus 3pt minus 2pt}{5pt}{\sffamily\bfseries\large}}
+    {12pt plus 3pt minus 2pt}{4pt}{\sffamily\normalsize\bfseries\color{Highlight}}}
   \renewcommand{\subsection}{\@startsection{subsection}{2}{0pt}%
-    {10pt plus 2pt minus 2pt}{3pt}{\sffamily\bfseries\normalsize}}
+    {9pt plus 2pt minus 2pt}{2pt}{\sffamily\normalsize\bfseries\color{Highlight}}}
   \renewcommand{\subsubsection}{\@startsection{subsubsection}{3}{0pt}%
-    {8pt plus 2pt minus 2pt}{2pt}{\sffamily\itshape\normalsize}}
-  % titlesec prints "1." for a section and "1.1" for a subsection; match it.
-  \expandafter\def\csname bxv@dot@section\endcsname{.}
-  \def\@seccntformat##1{\csname the##1\endcsname
-    \csname bxv@dot@##1\endcsname\hskip 0.5em}%
+    {7pt plus 2pt minus 2pt}{1pt}{\sffamily\small\itshape\color{Highlight}}}%
 }
+% The template numbers nothing, and a preprint reads better with plain headings.
+\setcounter{secnumdepth}{0}
 
-% --------------------------------------------------------------- running head
+% --------------------------------------------------------- page furniture
+\RequirePackage{fancyhdr}
 \fancypagestyle{bxvfirst}{%
   \fancyhf{}\renewcommand{\headrulewidth}{0pt}
-  \fancyfoot[L]{\footnotesize\color{bxvmut}Preprint \textbar{} \today}
-  \fancyfoot[R]{\footnotesize\color{bxvmut}\thepage}}
+  \fancyfoot[L]{\footnotesize\color{Muted}Preprint \textbar{} \today}
+  \fancyfoot[R]{\footnotesize\color{Muted}\thepage}}
 \fancypagestyle{bxvbody}{%
-  \fancyhf{}\renewcommand{\headrulewidth}{0.4pt}
-  \renewcommand{\headrule}{\color{bxvrule}\hrule height 0.4pt}
-  \fancyhead[L]{\footnotesize\color{bxvmut}\sffamily\bxv@runningtitle}
-  \fancyhead[R]{\footnotesize\color{bxvmut}\sffamily Preprint}
-  \fancyfoot[R]{\footnotesize\color{bxvmut}\thepage}}
+  \fancyhf{}\renewcommand{\headrulewidth}{0pt}
+  \fancyhead[L]{\footnotesize\sffamily\color{Muted}\bxv@runningtitle}
+  \fancyhead[R]{\footnotesize\sffamily\color{Muted}Preprint}
+  \fancyfoot[R]{\footnotesize\color{Muted}\thepage}}
 \pagestyle{bxvbody}
 
+% Supplementary figures, tables and equations renumber as S1, S2 and so on.
+\newcommand{\beginsupplement}{%
+  \setcounter{figure}{0}\renewcommand{\thefigure}{S\arabic{figure}}%
+  \setcounter{table}{0}\renewcommand{\thetable}{S\arabic{table}}%
+  \setcounter{equation}{0}\renewcommand{\theequation}{S\arabic{equation}}}
+
 \setlength{\parindent}{0pt}
-\setlength{\parskip}{5pt plus 1pt}
-\IfFileExists{enumitem.sty}{%
-  \RequirePackage{enumitem}\setlist{itemsep=1pt,parsep=0pt,topsep=4pt}}{%
-  \setlength{\itemsep}{1pt}\setlength{\parsep}{0pt}\setlength{\topsep}{4pt}}
+\setlength{\parskip}{0.75ex plus 0.25ex minus 0.25ex}
 \renewcommand{\arraystretch}{1.15}
 \endinput

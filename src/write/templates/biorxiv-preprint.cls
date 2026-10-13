@@ -52,6 +52,43 @@
 \RequirePackage[T1]{fontenc}
 \RequirePackage[utf8]{inputenc}
 \RequirePackage[scaled=0.92]{helvet}
+% Characters that scientific prose uses and pdflatex's inputenc does not know.
+% A single undeclared one stops the build: a run on pennsieve:530 died on the
+% real minus sign, U+2212, which the manuscript used eight times. Declaring
+% them here keeps paper.tex readable rather than rewriting the author's text.
+\DeclareUnicodeCharacter{2212}{\ensuremath{-}}        % minus
+\DeclareUnicodeCharacter{2010}{-}                     % hyphen
+\DeclareUnicodeCharacter{2011}{\mbox{-}}              % non-breaking hyphen
+\DeclareUnicodeCharacter{2012}{--}                    % figure dash
+\DeclareUnicodeCharacter{2192}{\ensuremath{\rightarrow}}
+\DeclareUnicodeCharacter{2190}{\ensuremath{\leftarrow}}
+\DeclareUnicodeCharacter{2194}{\ensuremath{\leftrightarrow}}
+\DeclareUnicodeCharacter{00D7}{\ensuremath{\times}}
+\DeclareUnicodeCharacter{00F7}{\ensuremath{\div}}
+\DeclareUnicodeCharacter{00B1}{\ensuremath{\pm}}
+\DeclareUnicodeCharacter{2264}{\ensuremath{\leq}}
+\DeclareUnicodeCharacter{2265}{\ensuremath{\geq}}
+\DeclareUnicodeCharacter{2260}{\ensuremath{\neq}}
+\DeclareUnicodeCharacter{2248}{\ensuremath{\approx}}
+\DeclareUnicodeCharacter{223C}{\ensuremath{\sim}}
+\DeclareUnicodeCharacter{00B0}{\ensuremath{^\circ}}
+\DeclareUnicodeCharacter{00B5}{\ensuremath{\mu}}      % micro sign
+\DeclareUnicodeCharacter{03BC}{\ensuremath{\mu}}
+\DeclareUnicodeCharacter{03B1}{\ensuremath{\alpha}}
+\DeclareUnicodeCharacter{03B2}{\ensuremath{\beta}}
+\DeclareUnicodeCharacter{03B3}{\ensuremath{\gamma}}
+\DeclareUnicodeCharacter{03BA}{\ensuremath{\kappa}}
+\DeclareUnicodeCharacter{03C1}{\ensuremath{\rho}}
+\DeclareUnicodeCharacter{03C3}{\ensuremath{\sigma}}
+\DeclareUnicodeCharacter{03C7}{\ensuremath{\chi}}
+\DeclareUnicodeCharacter{0394}{\ensuremath{\Delta}}
+\DeclareUnicodeCharacter{2032}{\ensuremath{{}^\prime}}
+\DeclareUnicodeCharacter{00A0}{~}                     % non-breaking space
+\DeclareUnicodeCharacter{2009}{\,}                    % thin space
+\DeclareUnicodeCharacter{202F}{\,}
+\DeclareUnicodeCharacter{2022}{\textbullet}
+\DeclareUnicodeCharacter{2026}{\ldots}
+
 \IfFileExists{lmodern.sty}{\RequirePackage{lmodern}}{}
 \RequirePackage[left=0.8in,right=0.8in,top=0.75in,bottom=0.85in]{geometry}
 \RequirePackage{graphicx}

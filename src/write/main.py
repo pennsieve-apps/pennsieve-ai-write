@@ -120,7 +120,7 @@ def main() -> int:
         # not pass, so the gate holds the run here for a human to read.
         bb.log(STAGE, "unsupported_claims", str(e))
         write_outputs(bb, output_dir, client.usage_log, stage=STAGE)
-        build_run_report(bb, client, output_dir)
+        build_run_report(bb, client, output_dir, outcome="blocked")
         print(f"\n{e}", flush=True)
         return 8
     except (FileNotFoundError, ValueError) as e:
@@ -129,7 +129,7 @@ def main() -> int:
         # have and exit with a clear error so the workflow surfaces it.
         bb.log(STAGE, "fatal", repr(e))
         write_outputs(bb, output_dir, client.usage_log, stage=STAGE)
-        build_run_report(bb, client, output_dir)
+        build_run_report(bb, client, output_dir, outcome="failed")
         print(f"\nERROR: {e}", file=sys.stderr)
         return 2
     except (Exception, KeyboardInterrupt) as e:
@@ -144,7 +144,7 @@ def main() -> int:
     return 0
 
 
-def build_run_report(bb, client, output_dir: Path) -> None:
+def build_run_report(bb, client, output_dir: Path, outcome: str = "passed") -> None:
     """Write `report.html` for the whole run, at the root of the run folder.
 
     This happens on every way out of the stage, including the ones where no
@@ -160,7 +160,9 @@ def build_run_report(bb, client, output_dir: Path) -> None:
 
     run_dir = output_dir.parent
     try:
-        facts = run_report.collect(run_dir)
+        # The supervisor records this stage only after it exits, so tell the
+        # report how it went; otherwise it reads as a run still in progress.
+        facts = run_report.collect(run_dir, running_stage=STAGE, running_status=outcome)
     except Exception as exc:  # noqa: BLE001 - the report never decides the exit code
         bb.log(STAGE, "report_failed", f"could not read the run folder: {exc!r}")
         return

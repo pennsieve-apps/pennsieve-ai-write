@@ -30,7 +30,7 @@ from pennsieve_ai_utils.processor import (
     write_outputs,
 )
 
-from write.pipeline import run_write
+from write.pipeline import UnsupportedClaims, run_write
 
 STAGE = "write"
 
@@ -113,9 +113,18 @@ def main() -> int:
             output_dir=output_dir,
             revise=do_revise,
         )
+    except UnsupportedClaims as e:
+        # An honest result, not a crash. The draft, every audit round and a
+        # review.json marked "blocked" are on disk, and the stage still does
+        # not pass, so the gate holds the run here for a human to read.
+        bb.log(STAGE, "unsupported_claims", str(e))
+        write_outputs(bb, output_dir, client.usage_log, stage=STAGE)
+        print(f"\n{e}", flush=True)
+        return 8
     except (FileNotFoundError, ValueError) as e:
-        # Pre-LLM failures (notebook missing, hypothesis ID invalid) — write
-        # what we have and exit with a clear error so the workflow surfaces it.
+        # Problems with what this stage was given (a missing notebook, an
+        # invalid hypothesis ID, nothing that passed analysis) — write what we
+        # have and exit with a clear error so the workflow surfaces it.
         bb.log(STAGE, "fatal", repr(e))
         write_outputs(bb, output_dir, client.usage_log, stage=STAGE)
         print(f"\nERROR: {e}", file=sys.stderr)

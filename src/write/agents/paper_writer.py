@@ -260,6 +260,12 @@ def write_paper(
         max_tokens=32768,
     )
     paper_md = parsed.get("paper_md", "")
+    if not paper_md.strip():
+        # An empty paper.md used to be written and the run carried on into the
+        # enhancer and the auditor, which then audited nothing at all.
+        raise RuntimeError(
+            f"the paper writer returned no manuscript text for {hypothesis.id}: "
+            f"the model's JSON had no usable 'paper_md'")
     md_path = paper_dir / "paper.md"
     md_path.write_text(paper_md)
     bb.log(AGENT, "wrote", f"{hypothesis.id} → {md_path.name} ({len(paper_md)} chars)")

@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from write.agents import (
@@ -19,9 +19,27 @@ from write.agents import (
     paper_revisor,
     paper_writer,
 )
+from pennsieve_ai_utils import pricing
 from pennsieve_ai_utils.blackboard import Blackboard, Hypothesis
 from pennsieve_ai_utils.llm import LLMClient
 from write.tools import audit_render, notebook_extract, pdf_render
+
+
+class UnsupportedClaims(RuntimeError):
+    """The audit loop ended with claims the auditor could not support.
+
+    The draft, every audit round and a `review.json` with status "blocked" are
+    already written. This used to be a bare `RuntimeError` that escaped as an
+    uncaught traceback, which made the expected first-run outcome look like a
+    crash in the code.
+    """
+
+    def __init__(self, hypothesis_id: str, unsupported: int, paper_dir: str) -> None:
+        self.hypothesis_id = hypothesis_id
+        self.unsupported = unsupported
+        self.paper_dir = paper_dir
+        super().__init__(f"{hypothesis_id}: {unsupported} manuscript claim(s) remain unsupported "
+                         f"after the audit; the draft and audits are in {paper_dir}")
 
 
 def select_hypothesis(bb: Blackboard, hypothesis_id: str) -> Hypothesis:
@@ -64,6 +82,14 @@ def select_hypothesis(bb: Blackboard, hypothesis_id: str) -> Hypothesis:
     if not reviews or reviews[-1].verdict != "accept":
         raise ValueError(f"Hypothesis {h.id} was not accepted by the hypothesis critic")
     critique = h.methods_critique or {}
+    outcome = critique.get("outcome")
+    if outcome in ("not_testable", "unresolved"):
+        # Analyze recorded why it stopped. Say that, instead of the generic
+        # line, so nobody re-reads the analyze log to find out what happened.
+        reason = critique.get("not_testable_reason") or "(no reason recorded)"
+        headline = ("is not testable with this deposit" if outcome == "not_testable"
+                    else "did not pass its methods review after every round")
+        raise ValueError(f"Hypothesis {h.id} {headline}, so there is nothing to write up: {reason}")
     if critique.get("verdict") != "sound" or any(
         i.get("severity") == "high" for i in critique.get("issues", [])
     ):
@@ -136,7 +162,7 @@ def run_write(
     paper_dir.mkdir(parents=True, exist_ok=True)
     figures_dir = paper_dir / "figures"
 
-    h.manuscript_started_at = datetime.utcnow().isoformat(timespec="seconds")
+    h.manuscript_started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     # 1. Write
     print("\n--- paper_writer ---")
@@ -290,7 +316,7 @@ def run_write(
     h.manuscript_iterations = iterations
     h.audit_summary = audit_result.get("summary", "")
     h.audit_counts = counts
-    h.manuscript_finished_at = datetime.utcnow().isoformat(timespec="seconds")
+    h.manuscript_finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     from write.tools.tex_export import export_tex
     export_error = export_tex(md_path)
@@ -303,13 +329,15 @@ def run_write(
         "tex_export_error": export_error,
     }
     (paper_dir / "review.json").write_text(json.dumps(review, indent=2))
-    if counts["unsupported"]:
-        raise RuntimeError(f"{h.id}: {counts['unsupported']} unsupported manuscript claims remain; "
-                           "draft and audits retained for review")
-
     bb.log("write", "done",
            f"{h.id}: manuscript={h.manuscript_path} iterations={iterations} "
            f"cost=${h.manuscript_cost_usd:.4f}")
+    if counts["unsupported"]:
+        # The draft, the audits and a review.json saying "blocked" are all on
+        # disk. A manuscript the auditor could not fully support is a result to
+        # report, not a crash: the stage does not pass, and the supervisor's
+        # gate already refuses a review.json that is not ready_for_review.
+        raise UnsupportedClaims(h.id, counts["unsupported"], str(paper_dir))
 
 
 def _render_pdf_log(bb: Blackboard, md_path: Path, pdf_path: Path) -> None:
@@ -342,30 +370,19 @@ def _render_audited_pdf_log(bb: Blackboard, md_path: Path,
 
 
 def _cost_from_usage(usage_log: list[dict]) -> float:
-    """Sum estimated USD across the write-stage's LLM calls.
+    """Sum estimated USD across the write-stage's model calls.
 
-    The Bedrock SDK doesn't return per-call cost directly — we estimate from
-    token counts using the published list prices. These are coarse (margins
-    rounded to the cent) and don't apply any provisioned-throughput or
-    enterprise discount, but they're useful for relative-cost tracking and
-    budget-aware UX. The governor's audit table is the source of truth for
-    actual billed amounts.
+    Bedrock does not return a per-call cost, so this prices the token counts
+    with the shared table in `pennsieve_ai_utils.pricing`. That table is dated,
+    covers each model by name, charges the regional inference profiles the
+    premium they actually cost, and counts cache tokens.
+
+    This used to hold its own table of $15 and $75 per million for "opus" and
+    $3 and $15 for "sonnet", which are an older generation's prices: Opus 4.7
+    on Bedrock is $5.50 and $27.50, so the figure was about 2.7 times too high.
+    It also ignored cache tokens, which are most of what a cached prompt costs.
+
+    Under the governor its ledger remains the billing source of truth. Running
+    on Bedrock directly, this is the only cost figure the run produces.
     """
-    # USD per million tokens (input, output) by concrete model family.
-    rates = {
-        "opus":   (15.0, 75.0),
-        "sonnet": ( 3.0, 15.0),
-        "haiku":  ( 0.80, 4.0),
-    }
-    total = 0.0
-    for entry in usage_log:
-        model_id = entry.get("model_id", "").lower()
-        family = next((name for name in rates if name in model_id), None)
-        # Backward compatibility for usage events produced before concrete
-        # model IDs were recorded.
-        if family is None:
-            family = entry.get("logical_model") or entry.get("model", "")
-        in_rate, out_rate = rates.get(family, (0.0, 0.0))
-        total += entry.get("input_tokens", 0)  * in_rate  / 1_000_000
-        total += entry.get("output_tokens", 0) * out_rate / 1_000_000
-    return round(total, 6)
+    return round(pricing.summarize_usage(usage_log)["cost_usd"], 6)

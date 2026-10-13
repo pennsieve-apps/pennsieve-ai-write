@@ -26,7 +26,17 @@ For the chosen hypothesis (set via `VP_WRITE_HYPOTHESIS_ID`, default `auto`):
      the iteration cap, or disabling revision while unsupported claims remain,
      blocks the stage after retaining all review artifacts.
    - Otherwise **Paper Revisor** (synthesis role) runs with an auto-generated note targeting the unsupported claims, producing a new `paper.md`. The pre-revise text is snapshotted to `paper.iter{N}.md` so each audit JSON can be paired against the exact text it reviewed.
-5. Write the updated blackboard, manuscript markdown, audit JSON, perspective Q&A, and PDFs to `OUTPUT_DIR/`.
+5. **bioRxiv preprint** — build `paper.tex` against the bundled `biorxiv-preprint.cls`, copy the class and a `Makefile` beside it so the folder rebuilds by hand, and compile `preprint.pdf` with `latexmk` and pdflatex. bioRxiv does not typeset submissions, so this PDF is what a reader would see. This step never raises: a missing LaTeX or Pandoc install is recorded in `review.json` rather than failing the stage.
+6. Write the updated blackboard, manuscript markdown, audit JSON, perspective Q&A, and PDFs to `OUTPUT_DIR/`.
+7. **Run report** — build `report.html` for the whole run (Scout through Write, including what each stage set aside). It is written on every exit, including the ones with no manuscript, since a run that produced no paper is the one whose record most needs reading. A report that cannot be built is logged and never changes the exit code.
+
+**What Write refuses, and how it exits.** A hypothesis is written up only if it
+passed methods review. One that Analyze recorded as `not_testable` or
+`unresolved` is refused with that reason quoted, and a hypothesis the
+Hypothesize critic did not accept is refused too (exit 2). An empty manuscript
+from the writer is refused rather than audited. When the audit loop ends with
+claims still unsupported, the draft, the audits and a `blocked` `review.json`
+are kept and the stage exits 8 — an honest non-pass, not a crash.
 
 Outputs:
 
@@ -35,8 +45,11 @@ OUTPUT_DIR/
 ├── blackboard.json                # updated with manuscript metadata
 ├── papers/<HYPOTHESIS_ID>/
 │   ├── paper.md                   # final manuscript (post all revise iterations)
-│   ├── paper.tex                  # Pandoc LaTeX export (when Pandoc succeeds)
-│   ├── paper.pdf                  # rendered version of the same
+│   ├── paper.tex                  # bioRxiv LaTeX source (Pandoc body + class front matter)
+│   ├── biorxiv-preprint.cls       # the preprint class, copied beside paper.tex
+│   ├── Makefile                   # `make` rebuilds preprint.pdf by hand
+│   ├── preprint.pdf               # the compiled bioRxiv preprint (latexmk + pdflatex)
+│   ├── paper.pdf                  # WeasyPrint rendering of paper.md
 │   ├── paper_audited.pdf          # final text with FINAL audit's highlights
 │   ├── paper_audited.md           # the audited-paper markdown (<mark> spans embedded)
 │   ├── audit.json                 # final iteration's auditor verdicts (canonical)
@@ -50,7 +63,8 @@ OUTPUT_DIR/
 │   ├── discussion_perspectives.json    # the 4 personas × 2 Q&A pairs from the survey stage
 │   └── figures/                   # PNGs extracted from the executed notebook
 ├── notebook.jsonl                 # blackboard event log
-└── usage.jsonl                    # per-LLM-call cost log
+├── usage.jsonl                    # per-LLM-call cost log
+└── (run root)/report.html         # one-page report on the whole run
 ```
 
 The two PDFs serve different purposes:
@@ -88,6 +102,9 @@ explains this setting.
 | `VP_WRITE_ENHANCE_DISCUSSION` | `1` | If `0`, skip the STORM-style Discussion enhancer (saves ~$0.40 / paper, leaves the writer's first-pass Discussion in place). |
 | `VP_WRITE_REVISE` | `1` | If `0`, run a single audit pass and skip the revisor entirely. |
 | `VP_WRITE_MAX_AUDIT_ITERS` | `3` | Hard cap on audit ⇄ revise iterations. Loop also exits early on 0 unsupported claims. Worst-case cost = N × (one auditor call + one revisor call) ≈ $1-1.50 per iteration at Sonnet rates. |
+| `VP_WRITE_TEX_CLASS` | bundled `biorxiv-preprint.cls` | Path to a different LaTeX document class to build the preprint with. |
+| `VP_WRITE_TEX_COLUMNS` | `1` | `1` or `2` columns in the preprint body. |
+| `VP_WRITE_TEX_PDF` | unset | Set to `0` to write `paper.tex` but skip compiling `preprint.pdf`. |
 | `VP_MODEL_OPUS` | dynamically resolved | Explicit pin for reasoning-role writer/synthesizer calls. |
 | `VP_MODEL_SONNET` | dynamically resolved | Explicit pin for synthesis-role survey/auditor/revisor calls. |
 | `VP_LLM_MAX_RETRIES` | `1` on the governor, `4` on `bedrock` or `anthropic` | How many times the Anthropic SDK retries a failed request. The governor keeps one retry, because each of its timeouts already takes a minute. Direct backends retry more, to ride out short network dropouts. |

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
 from pennsieve_ai_utils.backend import llm_backend, missing_config
 from pennsieve_ai_utils.llm import LLMClient
@@ -119,6 +120,7 @@ def main() -> int:
         # not pass, so the gate holds the run here for a human to read.
         bb.log(STAGE, "unsupported_claims", str(e))
         write_outputs(bb, output_dir, client.usage_log, stage=STAGE)
+        build_run_report(bb, client, output_dir)
         print(f"\n{e}", flush=True)
         return 8
     except (FileNotFoundError, ValueError) as e:
@@ -127,6 +129,7 @@ def main() -> int:
         # have and exit with a clear error so the workflow surfaces it.
         bb.log(STAGE, "fatal", repr(e))
         write_outputs(bb, output_dir, client.usage_log, stage=STAGE)
+        build_run_report(bb, client, output_dir)
         print(f"\nERROR: {e}", file=sys.stderr)
         return 2
     except (Exception, KeyboardInterrupt) as e:
@@ -136,8 +139,44 @@ def main() -> int:
 
     bb.log(STAGE, "done", "")
     write_outputs(bb, output_dir, client.usage_log, stage=STAGE)
+    build_run_report(bb, client, output_dir)
     print(f"\nWrote: {output_dir / 'blackboard.json'}")
     return 0
+
+
+def build_run_report(bb, client, output_dir: Path) -> None:
+    """Write `report.html` for the whole run, at the root of the run folder.
+
+    This happens on every way out of the stage, including the ones where no
+    manuscript was written, because a run that produced no paper is exactly
+    the run whose record someone needs to read. The report is built from the
+    run folder, so it covers Scout, Hypothesize and Analyze as well.
+
+    Nothing here is allowed to change the stage's outcome: a report that
+    cannot be built is reported and the exit code stands.
+    """
+    from pennsieve_ai_utils import run_report, run_report_summary
+    from pennsieve_ai_utils.run_report_html import render_html
+
+    run_dir = output_dir.parent
+    try:
+        facts = run_report.collect(run_dir)
+    except Exception as exc:  # noqa: BLE001 - the report never decides the exit code
+        bb.log(STAGE, "report_failed", f"could not read the run folder: {exc!r}")
+        return
+    summary = run_report_summary.summarize(facts, client, run_id=bb.run_id)
+    if not summary:
+        bb.log(STAGE, "report_summary_skipped",
+               "the written summary could not be produced; the figures below are unaffected")
+    for destination in (run_dir / "report.html", output_dir / "report.html"):
+        try:
+            destination.write_text(render_html(facts, summary))
+            bb.log(STAGE, "report", f"wrote {destination}")
+            print(f"Run report: {destination}", flush=True)
+            return
+        except OSError:
+            continue  # the run root can be read-only; the stage folder is not
+    bb.log(STAGE, "report_failed", "the report could not be written anywhere")
 
 
 if __name__ == "__main__":

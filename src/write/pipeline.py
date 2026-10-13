@@ -319,7 +319,7 @@ def run_write(
     h.manuscript_finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     from write.tools.tex_export import export_tex
-    export_error = export_tex(md_path)
+    export_error = export_tex(md_path, data_doi=_seed_doi(bb), category=_category(h))
     bb.log("tex_export", "warn" if export_error else "wrote", export_error or "paper.tex")
     review = {
         "hypothesis_id": h.id,
@@ -367,6 +367,32 @@ def _render_audited_pdf_log(bb: Blackboard, md_path: Path,
     else:
         bb.log("pdf_render", "wrote", str(pdf_path.name))
         print(f"  [pdf] {pdf_path.name}")
+
+
+def _seed_doi(bb: Blackboard) -> str:
+    """The DOI of the deposit the analysis ran on, for the preprint's front matter."""
+    for dataset in bb.dataset_summaries:
+        if dataset.id == bb.subsystem and getattr(dataset, "doi", ""):
+            return str(dataset.doi).removeprefix("https://doi.org/")
+    return ""
+
+
+def _category(h: Hypothesis) -> str:
+    """Which of bioRxiv's three article categories this manuscript is.
+
+    bioRxiv asks every submission to declare one. A Co-Scientist paper
+    reanalyzes a deposit that already has a published study behind it, so it is
+    almost never "New Results": it either agrees with that study or it does
+    not. The analyst's own summary is the only record of which, so a claim that
+    the data did not support the prediction marks it as contradictory, and
+    anything else as confirmatory.
+    """
+    summary = (h.analysis_summary or "").lower()
+    contradicts = ("not supported", "contradict", "did not hold", "does not hold",
+                   "no significant", "failed to replicate", "opposite direction")
+    if any(phrase in summary for phrase in contradicts):
+        return "Contradictory Results"
+    return "Confirmatory Results"
 
 
 def _cost_from_usage(usage_log: list[dict]) -> float:

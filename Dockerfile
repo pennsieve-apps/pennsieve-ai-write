@@ -40,6 +40,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         fonts-dejavu-core \
         pandoc \
         shared-mime-info \
+# LaTeX, for the bioRxiv preprint. bioRxiv does not typeset submissions and
+# asks for LaTeX to be compiled before upload, so this stage has to produce
+# the PDF itself: pdflatex through latexmk, the same toolchain as the lab's
+# other manuscripts. This is the minimal set, about 130MB. biorxiv-preprint.cls
+# falls back where titlesec and enumitem are missing rather than pulling in
+# texlive-latex-extra, which is roughly 1GB on its own.
+        texlive-latex-base \
+        texlive-latex-recommended \
+        texlive-fonts-recommended \
+        lmodern \
+        latexmk \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

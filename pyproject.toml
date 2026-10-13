@@ -34,7 +34,7 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-write = ["prompts/*.md"]
+write = ["prompts/*.md", "templates/*.cls"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

@@ -65,3 +65,35 @@ def test_an_empty_manuscript_is_refused_rather_than_written(tmp_path, monkeypatc
         paper_writer.write_paper(Blackboard("q", "s"), client=None, hypothesis=h,
                                  executed_nb_path=tmp_path / "nb.ipynb", paper_dir=tmp_path)
     assert not (tmp_path / "paper.md").exists()
+
+
+def test_a_run_report_is_written_even_when_there_is_no_manuscript(tmp_path, monkeypatch):
+    """The runs worth reading are the ones that produced no paper."""
+    from pennsieve_ai_utils.blackboard import Blackboard
+    from write import main as write_main
+
+    import pennsieve_ai_utils.run_report_summary as summary_module
+
+    run_dir = tmp_path / "run"
+    (run_dir / "write").mkdir(parents=True)
+    # No model call in a unit test; the figures are what matter here.
+    monkeypatch.setattr(summary_module, "summarize", lambda facts, client, **kw: "")
+
+    bb = Blackboard("q", "pennsieve:530")
+    write_main.build_run_report(bb, client=None, output_dir=run_dir / "write")
+    assert (run_dir / "report.html").is_file(), "the report lands at the run root"
+    assert "run report" in (run_dir / "report.html").read_text().lower()
+
+
+def test_a_report_failure_does_not_change_the_outcome(tmp_path, monkeypatch):
+    from pennsieve_ai_utils.blackboard import Blackboard
+    from write import main as write_main
+    import pennsieve_ai_utils.run_report as report_module
+
+    def explode(_):
+        raise RuntimeError("unreadable run folder")
+
+    monkeypatch.setattr(report_module, "collect", explode)
+    bb = Blackboard("q", "s")
+    write_main.build_run_report(bb, client=None, output_dir=tmp_path / "write")
+    assert any(entry["action"] == "report_failed" for entry in bb.notebook)

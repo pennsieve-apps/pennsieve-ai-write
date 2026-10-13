@@ -90,7 +90,7 @@ explains this setting.
 | `VP_WRITE_MAX_AUDIT_ITERS` | `3` | Hard cap on audit ⇄ revise iterations. Loop also exits early on 0 unsupported claims. Worst-case cost = N × (one auditor call + one revisor call) ≈ $1-1.50 per iteration at Sonnet rates. |
 | `VP_MODEL_OPUS` | dynamically resolved | Explicit pin for reasoning-role writer/synthesizer calls. |
 | `VP_MODEL_SONNET` | dynamically resolved | Explicit pin for synthesis-role survey/auditor/revisor calls. |
-| `VP_LLM_MAX_RETRIES` | `1` | SDK retries within each routed request attempt. |
+| `VP_LLM_MAX_RETRIES` | `1` on the governor, `4` on `bedrock` or `anthropic` | How many times the Anthropic SDK retries a failed request. The governor keeps one retry, because each of its timeouts already takes a minute. Direct backends retry more, to ride out short network dropouts. |
 
 ## Model routing
 

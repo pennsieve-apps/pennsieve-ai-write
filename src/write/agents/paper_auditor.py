@@ -119,7 +119,12 @@ def audit(
         not isinstance(c, dict) or c.get("verdict") not in verdicts
         for c in claims
     ):
-        raise ValueError("Paper audit must contain nonempty claims with valid verdicts")
+        # A RuntimeError, not a ValueError: the stage treats ValueError as a
+        # problem with the inputs it was handed, and this is a bad answer from
+        # the model, which the log should not blame on the run's setup.
+        raise RuntimeError(
+            f"the paper auditor returned no usable claims for {hypothesis.id}; "
+            f"every claim needs a verdict of {', '.join(sorted(verdicts))}")
     return {
         "summary": parsed.get("summary", "") or "",
         "claims": claims,

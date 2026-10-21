@@ -8,6 +8,8 @@ under `papers/<HX>/` in `$OUTPUT_DIR`.
 
 Auth model: the platform injects `LLM_GOVERNOR_FUNCTION_NAME`; the
 `pennsieve-llm` SDK invokes that Lambda with the execution run ID attached.
+Local runs can bypass the governor with `VP_LLM_BACKEND=bedrock` or
+`anthropic` (see `pennsieve_ai_utils.backend`).
 
 Compliance note: this processor makes outbound HTTPS to api.crossref.org
 and api.datacite.org. That's incompatible with compliant-mode no-internet-
@@ -17,7 +19,9 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
+from pennsieve_ai_utils.backend import llm_backend, missing_config
 from pennsieve_ai_utils.llm import LLMClient
 from pennsieve_ai_utils.models import ModelNotAvailable
 from pennsieve_ai_utils.processor import (
@@ -27,7 +31,7 @@ from pennsieve_ai_utils.processor import (
     write_outputs,
 )
 
-from write.pipeline import run_write
+from write.pipeline import UnsupportedClaims, run_write
 
 STAGE = "write"
 
@@ -41,6 +45,7 @@ def main() -> int:
     env.banner(
         STAGE,
         DEPLOYMENT_MODE=deployment_mode or "<unset>",
+        VP_LLM_BACKEND=llm_backend(),
         LLM_GOVERNOR_FUNCTION_NAME=os.environ.get("LLM_GOVERNOR_FUNCTION_NAME", "<unset>"),
         VP_WRITE_HYPOTHESIS_ID=hypothesis_id,
         VP_WRITE_REVISE=do_revise,
@@ -64,13 +69,13 @@ def main() -> int:
     # Write uses direct governor Lambda transport; unlike Analyze, it does not
     # run a Claude Agent SDK session and therefore does not require the local
     # Anthropic-compatible sidecar.
-    if not os.environ.get("LLM_GOVERNOR_FUNCTION_NAME"):
-        print(
-            "ERROR: LLM_GOVERNOR_FUNCTION_NAME is not set. The write stage "
-            "requires direct access to the platform-managed LLM governor. "
-            "Confirm the compute node has `enable_llm_access = true`.",
-            file=sys.stderr,
-        )
+    missing = missing_config()
+    if missing:
+        hint = ("The write stage requires direct access to the platform-managed LLM "
+                "governor. Confirm the compute node has `enable_llm_access = true`."
+                if llm_backend() == "governor" else
+                f"Set them for VP_LLM_BACKEND={llm_backend()}.")
+        print(f"ERROR: {', '.join(missing)} not set. {hint}", file=sys.stderr)
         return 2
 
     bb = load_upstream_blackboard(env.input_dir / "blackboard.json", stage=STAGE,
@@ -109,11 +114,22 @@ def main() -> int:
             output_dir=output_dir,
             revise=do_revise,
         )
+    except UnsupportedClaims as e:
+        # An honest result, not a crash. The draft, every audit round and a
+        # review.json marked "blocked" are on disk, and the stage still does
+        # not pass, so the gate holds the run here for a human to read.
+        bb.log(STAGE, "unsupported_claims", str(e))
+        write_outputs(bb, output_dir, client.usage_log, stage=STAGE)
+        build_run_report(bb, client, output_dir, outcome="blocked")
+        print(f"\n{e}", flush=True)
+        return 8
     except (FileNotFoundError, ValueError) as e:
-        # Pre-LLM failures (notebook missing, hypothesis ID invalid) — write
-        # what we have and exit with a clear error so the workflow surfaces it.
+        # Problems with what this stage was given (a missing notebook, an
+        # invalid hypothesis ID, nothing that passed analysis) — write what we
+        # have and exit with a clear error so the workflow surfaces it.
         bb.log(STAGE, "fatal", repr(e))
         write_outputs(bb, output_dir, client.usage_log, stage=STAGE)
+        build_run_report(bb, client, output_dir, outcome="failed")
         print(f"\nERROR: {e}", file=sys.stderr)
         return 2
     except (Exception, KeyboardInterrupt) as e:
@@ -123,8 +139,46 @@ def main() -> int:
 
     bb.log(STAGE, "done", "")
     write_outputs(bb, output_dir, client.usage_log, stage=STAGE)
+    build_run_report(bb, client, output_dir)
     print(f"\nWrote: {output_dir / 'blackboard.json'}")
     return 0
+
+
+def build_run_report(bb, client, output_dir: Path, outcome: str = "passed") -> None:
+    """Write `report.html` for the whole run, at the root of the run folder.
+
+    This happens on every way out of the stage, including the ones where no
+    manuscript was written, because a run that produced no paper is exactly
+    the run whose record someone needs to read. The report is built from the
+    run folder, so it covers Scout, Hypothesize and Analyze as well.
+
+    Nothing here is allowed to change the stage's outcome: a report that
+    cannot be built is reported and the exit code stands.
+    """
+    from pennsieve_ai_utils import run_report, run_report_summary
+    from pennsieve_ai_utils.run_report_html import render_html
+
+    run_dir = output_dir.parent
+    try:
+        # The supervisor records this stage only after it exits, so tell the
+        # report how it went; otherwise it reads as a run still in progress.
+        facts = run_report.collect(run_dir, running_stage=STAGE, running_status=outcome)
+    except Exception as exc:  # noqa: BLE001 - the report never decides the exit code
+        bb.log(STAGE, "report_failed", f"could not read the run folder: {exc!r}")
+        return
+    summary = run_report_summary.summarize(facts, client, run_id=bb.run_id)
+    if not summary:
+        bb.log(STAGE, "report_summary_skipped",
+               "the written summary could not be produced; the figures below are unaffected")
+    for destination in (run_dir / "report.html", output_dir / "report.html"):
+        try:
+            destination.write_text(render_html(facts, summary))
+            bb.log(STAGE, "report", f"wrote {destination}")
+            print(f"Run report: {destination}", flush=True)
+            return
+        except OSError:
+            continue  # the run root can be read-only; the stage folder is not
+    bb.log(STAGE, "report_failed", "the report could not be written anywhere")
 
 
 if __name__ == "__main__":

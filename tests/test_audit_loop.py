@@ -21,7 +21,7 @@ def test_audit_pairs_every_version_and_blocks_unsupported_draft(monkeypatch, tmp
     monkeypatch.setenv("VP_WRITE_MAX_AUDIT_ITERS", "2")
     monkeypatch.setattr(pipeline, "_render_pdf_log", lambda *a: None)
     monkeypatch.setattr(pipeline, "_render_audited_pdf_log", lambda *a: None)
-    monkeypatch.setattr(tex_export, "export_tex", lambda p: None)
+    monkeypatch.setattr(tex_export, "export_tex", lambda p, **kwargs: None)
     def writer(bb, client, **kwargs):
         path = kwargs["paper_dir"] / "paper.md"
         path.write_text("Original manuscript")
@@ -37,7 +37,7 @@ def test_audit_pairs_every_version_and_blocks_unsupported_draft(monkeypatch, tmp
     if passes:
         pipeline.run_write(bb, SimpleNamespace(usage_log=[]), **kwargs)
     else:
-        with pytest.raises(RuntimeError, match="unsupported manuscript claims"):
+        with pytest.raises(pipeline.UnsupportedClaims, match="remain unsupported"):
             pipeline.run_write(bb, SimpleNamespace(usage_log=[]), **kwargs)
     paper = output_dir / "papers/H2"
     assert (paper / "paper.iter1.md").read_text() == texts[0]

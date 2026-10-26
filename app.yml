@@ -1,0 +1,103 @@
+# yaml-language-server: $schema=https://schemas.pennsieve.io/app-manifest/v1.json
+application:
+  name: AI Write
+  description: >-
+    Stage 4 of the pennsieve-ai research pipeline. Reads the analyze stage's blackboard and
+    executed notebook and writes a scientific manuscript for one analyzed hypothesis, then
+    fact-checks it in an audit and revise loop and builds a bioRxiv-style preprint PDF.
+  type: processor
+  tags:
+    - ai
+    - manuscript
+    - writing
+    - llm
+
+runtime:
+  computeTypes:
+    - standard
+  # Calls Claude through the Pennsieve LLM governor: LLM access is opt-in.
+  llm: true
+
+parameters:
+  - name: VP_WRITE_HYPOTHESIS_ID
+    label: Hypothesis ID
+    description: >-
+      Which hypothesis on the blackboard to write a manuscript for. "auto" picks the
+      analyzed hypothesis.
+    type: string
+    defaultValue: auto
+  - name: VP_WRITE_ENHANCE_DISCUSSION
+    label: Enhance Discussion
+    description: >-
+      1 runs the Discussion enhancer (four reviewer personas, then a rewrite of the
+      Discussion section); 0 skips it and keeps the writer's first-pass Discussion.
+    type: string
+    defaultValue: "1"
+    validValues: ["1", "0"]
+  - name: VP_WRITE_REVISE
+    label: Revise
+    description: >-
+      1 revises the manuscript after each audit that finds unsupported claims; 0 runs a
+      single audit pass and never revises.
+    type: string
+    defaultValue: "1"
+    validValues: ["1", "0"]
+  - name: VP_WRITE_MAX_AUDIT_ITERS
+    label: Max audit iterations
+    description: >-
+      Most audit and revise rounds to run. The loop stops early once an audit finds no
+      unsupported claims.
+    type: integer
+    defaultValue: 3
+    min: 1
+  - name: VP_WRITE_TEX_COLUMNS
+    label: Preprint columns
+    description: Number of columns in the preprint body.
+    type: string
+    defaultValue: "1"
+    validValues: ["1", "2"]
+  - name: VP_WRITE_TEX_PDF
+    label: Compile preprint PDF
+    description: 1 compiles preprint.pdf from paper.tex; 0 writes paper.tex without compiling it.
+    type: string
+    defaultValue: "1"
+    validValues: ["1", "0"]
+  - name: VP_MODEL_REASONING
+    label: Reasoning model
+    description: >-
+      Pin the model for the writer and the Discussion synthesizer. Unset picks the strongest
+      model the governor allows. The run stops at startup if the pinned model is not allowed.
+    type: string
+    required: false
+  - name: VP_MODEL_SYNTHESIS
+    label: Synthesis model
+    description: >-
+      Pin the model for the Discussion survey, the auditor and the revisor. Unset picks one
+      from the models the governor allows. The run stops at startup if the pinned model is
+      not allowed.
+    type: string
+    required: false
+  - name: VP_LLM_MAX_RETRIES
+    label: LLM retries
+    description: How many times a failed model request is retried. Unset uses 1 on the governor.
+    type: integer
+    required: false
+    min: 0
+  - name: VP_LOG_LLM_IO
+    label: Log model requests
+    description: Save every model request and response, word for word, to llm-io.write.jsonl.
+    type: boolean
+    defaultValue: false
+
+outputs:
+  - name: manuscript
+    description: >-
+      The updated blackboard.json and, under papers/<hypothesis>/, the manuscript (paper.md),
+      its audits and review record, the LaTeX source and the PDFs, plus a report.html for
+      the whole run.
+    mediaTypes:
+      - application/json
+      - text/markdown
+      - application/pdf
+      - application/x-tex
+      - text/html

@@ -69,6 +69,24 @@ def test_auto_skips_a_failed_analysis_for_the_one_that_passed():
     assert select_hypothesis(bb, "auto").id == "H3"
 
 
+def test_auto_writes_every_passed_hypothesis_in_analysis_order():
+    """One manuscript per hypothesis that passed, in the order Analyze ran them."""
+    from pennsieve_ai_utils.blackboard import CriticReview, Hypothesis
+    from write.pipeline import select_hypotheses
+    bb = _blackboard_with("not_testable")
+    for hid, started in (("H7", "2026-11-01T10:30:00"), ("H3", "2026-11-01T10:00:00")):
+        h = Hypothesis(hid, "claim", "why", [], "pred", "experiment")
+        h.iteration = 1
+        h.analysis_workdir = f"hypotheses/{hid}"
+        h.analysis_summary = "The analysis passed."
+        h.analysis_started_at = started
+        h.methods_critique = {"verdict": "sound", "issues": []}
+        bb.hypotheses.append(h)
+        bb.critic_reviews.append(CriticReview(hid, 4, 4, 4, 4, [], "accept", 1))
+    assert select_hypotheses(bb, "auto") == ["H3", "H7"]
+    assert select_hypotheses(bb, "H7") == ["H7"]
+
+
 def test_an_empty_manuscript_is_refused_rather_than_written(tmp_path, monkeypatch):
     """An empty paper.md used to be written and audited as if it were a paper."""
     from write.agents import paper_writer

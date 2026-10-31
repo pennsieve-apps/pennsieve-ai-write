@@ -50,6 +50,23 @@ ANALYSIS_FAILED = {
 }
 
 
+def select_hypotheses(bb: Blackboard, hypothesis_id: str) -> list[str]:
+    """IDs of the hypotheses to write a manuscript for, one manuscript each.
+
+    `auto` takes every final-iteration hypothesis that passed analysis, in the
+    order Analyze ran them (its ranking). With none passed it falls back to
+    `select_hypothesis`, whose refusal says why. A named ID writes that one.
+    """
+    if hypothesis_id != "auto":
+        return [hypothesis_id]
+    final = bb.iterations_completed or max((h.iteration for h in bb.hypotheses), default=0)
+    passed = [h for h in bb.hypotheses_at(final)
+              if h.analysis_workdir and h.analysis_summary
+              and (h.methods_critique or {}).get("outcome") not in ANALYSIS_FAILED]
+    passed.sort(key=lambda h: h.analysis_started_at or "")
+    return [h.id for h in passed] or [select_hypothesis(bb, "auto").id]
+
+
 def select_hypothesis(bb: Blackboard, hypothesis_id: str) -> Hypothesis:
     """Pick the hypothesis to write a manuscript for. Fails with a clear error
     if the requested ID isn't on the blackboard or has no analysis output."""

@@ -98,7 +98,7 @@ explains this setting.
 | `LLM_GOVERNOR_FUNCTION_NAME` | _(required for `governor`)_ | Governor Lambda used for discovery, preflight, and all LLM calls. |
 | `AWS_REGION` | _(required for `bedrock`)_ | This is the Bedrock region. Your AWS login comes from `AWS_PROFILE` or AWS keys. |
 | `VP_LOG_LLM_IO` | unset | Set this to `1` to save every model request and response, word for word, to `llm-io.write.jsonl`. |
-| `VP_WRITE_HYPOTHESIS_ID` | `auto` | Which hypothesis on the blackboard to write a manuscript for. |
+| `VP_WRITE_HYPOTHESIS_ID` | `auto` | Which hypothesis on the blackboard to write a manuscript for. `auto` takes the analyzed hypothesis that passed, skipping any that Analyze recorded as not testable, unresolved or refused. |
 | `VP_WRITE_ENHANCE_DISCUSSION` | `1` | If `0`, skip the STORM-style Discussion enhancer (saves ~$0.40 / paper, leaves the writer's first-pass Discussion in place). |
 | `VP_WRITE_REVISE` | `1` | If `0`, run a single audit pass and skip the revisor entirely. |
 | `VP_WRITE_MAX_AUDIT_ITERS` | `3` | Hard cap on audit ⇄ revise iterations. Loop also exits early on 0 unsupported claims. Worst-case cost = N × (one auditor call + one revisor call) ≈ $1-1.50 per iteration at Sonnet rates. |

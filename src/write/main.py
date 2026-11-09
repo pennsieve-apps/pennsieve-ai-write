@@ -1,9 +1,8 @@
 """Entrypoint for pennsieve-ai-write.
 
 Reads the analyze stage's blackboard from `$INPUT_DIR/blackboard.json`,
-generates a manuscript for the hypothesis selected via
-`$VP_WRITE_HYPOTHESIS_ID` (default `auto`, selecting the analyzed candidate),
-and writes the updated blackboard plus the manuscript and review artifacts
+generates one manuscript per hypothesis that passed analysis (or the one
+named by `$VP_WRITE_HYPOTHESIS_ID`; default `auto`), and writes the updated blackboard plus the manuscript and review artifacts
 under `papers/<HX>/` in `$OUTPUT_DIR`.
 
 Auth model: the platform injects `LLM_GOVERNOR_FUNCTION_NAME`; the
@@ -31,7 +30,7 @@ from pennsieve_ai_utils.processor import (
     write_outputs,
 )
 
-from write.pipeline import UnsupportedClaims, run_write
+from write.pipeline import UnsupportedClaims, run_write, select_hypotheses
 
 STAGE = "write"
 
@@ -107,35 +106,52 @@ def main() -> int:
            ", ".join(f"{role}={a['model_id']}" for role, a in sorted(assignments.items())))
 
     try:
-        run_write(
-            bb, client,
-            hypothesis_id=hypothesis_id,
-            input_dir=env.input_dir,
-            output_dir=output_dir,
-            revise=do_revise,
-        )
-    except UnsupportedClaims as e:
-        # An honest result, not a crash. The draft, every audit round and a
-        # review.json marked "blocked" are on disk, and the stage still does
-        # not pass, so the gate holds the run here for a human to read.
-        bb.log(STAGE, "unsupported_claims", str(e))
-        write_outputs(bb, output_dir, client.usage_log, stage=STAGE)
-        build_run_report(bb, client, output_dir, outcome="blocked")
-        print(f"\n{e}", flush=True)
-        return 8
+        targets = select_hypotheses(bb, hypothesis_id)
     except (FileNotFoundError, ValueError) as e:
-        # Problems with what this stage was given (a missing notebook, an
-        # invalid hypothesis ID, nothing that passed analysis) — write what we
-        # have and exit with a clear error so the workflow surfaces it.
         bb.log(STAGE, "fatal", repr(e))
         write_outputs(bb, output_dir, client.usage_log, stage=STAGE)
         build_run_report(bb, client, output_dir, outcome="failed")
         print(f"\nERROR: {e}", file=sys.stderr)
         return 2
-    except (Exception, KeyboardInterrupt) as e:
-        bb.log(STAGE, "fatal", repr(e))
+    bb.log(STAGE, "targets", f"one manuscript each for {', '.join(targets)}")
+
+    # One manuscript per hypothesis that passed analysis. A manuscript the
+    # audit blocks, or one that cannot be written, is recorded and the next
+    # one still gets written; the stage passes if any is ready for review.
+    outcomes: dict[str, str] = {}
+    for target in targets:
+        try:
+            run_write(
+                bb, client,
+                hypothesis_id=target,
+                input_dir=env.input_dir,
+                output_dir=output_dir,
+                revise=do_revise,
+            )
+            outcomes[target] = "ready_for_review"
+        except UnsupportedClaims as e:
+            # An honest result, not a crash: the draft, every audit round and a
+            # review.json marked "blocked" are on disk for a human to read.
+            bb.log(STAGE, "unsupported_claims", str(e))
+            print(f"\n{e}", flush=True)
+            outcomes[target] = "blocked"
+        except (FileNotFoundError, ValueError) as e:
+            # Problems with what this stage was given (a missing notebook, an
+            # invalid hypothesis ID, an analysis that did not pass).
+            bb.log(STAGE, "fatal", f"{target}: {e!r}")
+            print(f"\nERROR: {target}: {e}", file=sys.stderr)
+            outcomes[target] = "failed"
+        except (Exception, KeyboardInterrupt) as e:
+            bb.log(STAGE, "fatal", repr(e))
+            write_outputs(bb, output_dir, client.usage_log, stage=STAGE)
+            raise
+    bb.log(STAGE, "outcomes", ", ".join(f"{k}={v}" for k, v in outcomes.items()))
+
+    if "ready_for_review" not in outcomes.values():
+        outcome = "blocked" if "blocked" in outcomes.values() else "failed"
         write_outputs(bb, output_dir, client.usage_log, stage=STAGE)
-        raise
+        build_run_report(bb, client, output_dir, outcome=outcome)
+        return 8 if outcome == "blocked" else 2
 
     bb.log(STAGE, "done", "")
     write_outputs(bb, output_dir, client.usage_log, stage=STAGE)

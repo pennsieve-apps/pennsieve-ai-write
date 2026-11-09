@@ -42,6 +42,31 @@ class UnsupportedClaims(RuntimeError):
                          f"after the audit; the draft and audits are in {paper_dir}")
 
 
+# Outcomes Analyze records when a hypothesis did not pass, and how to say so.
+ANALYSIS_FAILED = {
+    "not_testable": "is not testable with this deposit",
+    "unresolved": "did not pass its methods review after every round",
+    "refused": "was refused by every analyst model",
+}
+
+
+def select_hypotheses(bb: Blackboard, hypothesis_id: str) -> list[str]:
+    """IDs of the hypotheses to write a manuscript for, one manuscript each.
+
+    `auto` takes every final-iteration hypothesis that passed analysis, in the
+    order Analyze ran them (its ranking). With none passed it falls back to
+    `select_hypothesis`, whose refusal says why. A named ID writes that one.
+    """
+    if hypothesis_id != "auto":
+        return [hypothesis_id]
+    final = bb.iterations_completed or max((h.iteration for h in bb.hypotheses), default=0)
+    passed = [h for h in bb.hypotheses_at(final)
+              if h.analysis_workdir and h.analysis_summary
+              and (h.methods_critique or {}).get("outcome") not in ANALYSIS_FAILED]
+    passed.sort(key=lambda h: h.analysis_started_at or "")
+    return [h.id for h in passed] or [select_hypothesis(bb, "auto").id]
+
+
 def select_hypothesis(bb: Blackboard, hypothesis_id: str) -> Hypothesis:
     """Pick the hypothesis to write a manuscript for. Fails with a clear error
     if the requested ID isn't on the blackboard or has no analysis output."""
@@ -50,7 +75,12 @@ def select_hypothesis(bb: Blackboard, hypothesis_id: str) -> Hypothesis:
         candidates = [h for h in bb.hypotheses_at(final) if h.analysis_workdir and h.analysis_summary]
         if not candidates:
             raise ValueError("No analyzed hypothesis is available for writing")
-        hypothesis_id = candidates[0].id
+        # Analyze moves on to the next-ranked hypothesis when one fails, so the
+        # board can hold a failed analysis next to the one that passed. Prefer
+        # the one that passed; with none, the refusal below says why.
+        passed = [h for h in candidates
+                  if (h.methods_critique or {}).get("outcome") not in ANALYSIS_FAILED]
+        hypothesis_id = (passed or candidates)[0].id
     if not re.fullmatch(r"[A-Za-z0-9_-]+", hypothesis_id):
         raise ValueError("Hypothesis ID must be a safe directory name")
     matches = [h for h in bb.hypotheses if h.id == hypothesis_id]
@@ -83,12 +113,11 @@ def select_hypothesis(bb: Blackboard, hypothesis_id: str) -> Hypothesis:
         raise ValueError(f"Hypothesis {h.id} was not accepted by the hypothesis critic")
     critique = h.methods_critique or {}
     outcome = critique.get("outcome")
-    if outcome in ("not_testable", "unresolved"):
+    if outcome in ANALYSIS_FAILED:
         # Analyze recorded why it stopped. Say that, instead of the generic
         # line, so nobody re-reads the analyze log to find out what happened.
         reason = critique.get("not_testable_reason") or "(no reason recorded)"
-        headline = ("is not testable with this deposit" if outcome == "not_testable"
-                    else "did not pass its methods review after every round")
+        headline = ANALYSIS_FAILED[outcome]
         raise ValueError(f"Hypothesis {h.id} {headline}, so there is nothing to write up: {reason}")
     if critique.get("verdict") != "sound" or any(
         i.get("severity") == "high" for i in critique.get("issues", [])
